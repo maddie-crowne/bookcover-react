@@ -388,7 +388,7 @@ function BookTile({ book }) {
               style={linkButtonStyle}
               onClick={() => confirmOpen("EPUB", book.epub_link)}
             >
-              Preview EPUB
+              Download EPUB
             </button>
           )}
 
@@ -397,7 +397,7 @@ function BookTile({ book }) {
               style={linkButtonStyle}
               onClick={() => confirmOpen("Audiobook", book.audio_preview_url || book.audio_link)}
             >
-              Preview Audio
+              Download Audio
             </button>
           )}
 
