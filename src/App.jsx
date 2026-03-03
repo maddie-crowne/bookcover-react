@@ -5,6 +5,7 @@ import { auth } from "./firebase";
 
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
+import Reader from "./pages/Reader";
 
 function ProtectedRoute({ user, children }) {
   if (user === undefined) return null; 
@@ -30,6 +31,7 @@ export default function App() {
           </ProtectedRoute>
         }
       />
+      <Route path="/reader/:bookId" element={<Reader user={user} />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

@@ -10,27 +10,58 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState("");
 
+  const normalizedEmail = (email || "").trim();
+
+  const validate = () => {
+    if (!normalizedEmail) return "Please enter an email.";
+    if (!password) return "Please enter a password.";
+    // very lightweight validation (prevents obvious invalid strings)
+    if (!/^\S+@\S+\.\S+$/.test(normalizedEmail)) return "That email looks invalid. Example: name@email.com";
+    if (password.length < 6) return "Password must be at least 6 characters.";
+    return null;
+  };
+
   const signup = async () => {
     setStatus("");
+    const err = validate();
+    if (err) {
+      setStatus(err);
+      return;
+    }
+
     try {
-      const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
-      await setDoc(doc(db, "Users", cred.user.uid), {
-        email: cred.user.email,
-        createdAt: serverTimestamp(),
-      }, { merge: true });
+      // helpful debug if it still fails
+      console.log("SIGNUP email:", JSON.stringify(normalizedEmail));
+
+      const cred = await createUserWithEmailAndPassword(auth, normalizedEmail, password);
+
+      await setDoc(
+        doc(db, "Users", cred.user.uid),
+        { email: cred.user.email, createdAt: serverTimestamp() },
+        { merge: true }
+      );
+
       nav("/");
     } catch (e) {
-      setStatus(e.message);
+      console.log("SIGNUP error:", e);
+      setStatus(`${e.code || "error"} — ${e.message}`);
     }
   };
 
   const login = async () => {
     setStatus("");
+    if (!normalizedEmail || !password) {
+      setStatus("Enter email and password.");
+      return;
+    }
+
     try {
-      await signInWithEmailAndPassword(auth, email.trim(), password);
+      console.log("LOGIN email:", JSON.stringify(normalizedEmail));
+      await signInWithEmailAndPassword(auth, normalizedEmail, password);
       nav("/");
     } catch (e) {
-      setStatus(e.message);
+      console.log("LOGIN error:", e);
+      setStatus(`${e.code || "error"} — ${e.message}`);
     }
   };
 
@@ -62,6 +93,7 @@ export default function Login() {
           value={email}
           onChange={(e)=>setEmail(e.target.value)}
           style={inputStyle}
+          autoComplete="email"
         />
         <input
           type="password"
@@ -69,6 +101,7 @@ export default function Login() {
           value={password}
           onChange={(e)=>setPassword(e.target.value)}
           style={inputStyle}
+          autoComplete="current-password"
         />
 
         <button onClick={login} style={{...btnStyle, background:"#2563eb"}}>Login</button>

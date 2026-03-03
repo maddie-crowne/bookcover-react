@@ -4,6 +4,7 @@ import { signOut } from "firebase/auth";
 import { collection, doc, getDocs, setDoc, serverTimestamp } from "firebase/firestore";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import Modal from "../components/Modal";
+import { useNavigate } from "react-router-dom";
 
 const SCRAPER_BASE_URL = "http://localhost:5050";
 
@@ -20,6 +21,7 @@ export default function Dashboard({ user }) {
 
   // upload state
   const [upTitle, setUpTitle] = useState("");
+  const [upAudioFile, setUpAudioFile] = useState(null);
   const [upAuthor, setUpAuthor] = useState("");
   const [upFile, setUpFile] = useState(null);
   const [upStatus, setUpStatus] = useState("");
@@ -44,38 +46,67 @@ export default function Dashboard({ user }) {
   };
 
   // upload manually
-  const uploadEpub = async () => {
+  const uploadManualFiles = async () => {
     setUpStatus("");
-    if (!upTitle.trim() || !upFile) {
-      setUpStatus("Please provide a title and pick an EPUB file.");
+    if (!upTitle.trim()) {
+      setUpStatus("Please provide a title.");
       return;
     }
-    try {
-      setUpStatus("Uploading EPUB…");
-      const storageRef = ref(storage, `epubs/${upFile.name}`);
-      const snap = await uploadBytes(storageRef, upFile);
-      const url = await getDownloadURL(snap.ref);
+    if (!upFile && !upAudioFile) {
+      setUpStatus("Upload an EPUB and/or an audio file.");
+      return;
+    }
 
-      setUpStatus("Saving…");
+    try {
       const bookId = generateBookId(upTitle);
-      await setDoc(doc(db, "Users", user.uid, "Books", bookId), {
+      const baseDoc = {
         title: upTitle.trim(),
         author: upAuthor.trim() || "Unknown",
-        epub_link: url,
         updatedAt: serverTimestamp(),
         createdAt: serverTimestamp(),
-      }, { merge: true });
+      };
+
+      setUpStatus("Saving book…");
+      await setDoc(doc(db, "Users", user.uid, "Books", bookId), baseDoc, { merge: true });
+
+      // EPUB upload
+      if (upFile) {
+        setUpStatus("Uploading EPUB…");
+        const epubPath = `epubs/${user.uid}/${bookId}.epub`;
+        const epubRef = ref(storage, epubPath);
+        await uploadBytes(epubRef, upFile);
+
+        await setDoc(doc(db, "Users", user.uid, "Books", bookId), {
+          epub_storage_path: epubPath,
+          epub_source: "upload",
+          updatedAt: serverTimestamp(),
+        }, { merge: true });
+      }
+
+      // Audio upload
+      if (upAudioFile) {
+        setUpStatus("Uploading audio…");
+        const audioPath = `audio/${user.uid}/${bookId}/${upAudioFile.name}`;
+        const audioRef = ref(storage, audioPath);
+        await uploadBytes(audioRef, upAudioFile);
+
+        await setDoc(doc(db, "Users", user.uid, "Books", bookId), {
+          audio_storage_path: audioPath,
+          audio_source: "upload",
+          updatedAt: serverTimestamp(),
+        }, { merge: true });
+      }
 
       setUpStatus("Saved ✓");
       setModalOpen(false);
-      setUpTitle(""); setUpAuthor(""); setUpFile(null);
+      setUpTitle(""); setUpAuthor(""); setUpFile(null); setUpAudioFile(null);
       await loadBooks();
     } catch (e) {
       setUpStatus("Upload failed: " + e.message);
     }
   };
 
-// epub search
+  // epub search
   const searchGutenberg = async () => {
     setSearchStatus("");
     setResults([]);
@@ -93,10 +124,12 @@ export default function Dashboard({ user }) {
       }
 
       const mapped = raw.slice(0, 10).map((b) => ({
+        gutenberg_id: b.id,
         title: b.title,
         author: b.authors?.[0]?.name || "Unknown",
         epub_link: epubFromGutendex(b.formats),
         cover_url: coverFromGutendex(b.formats),
+        epub_preview_url: `https://www.gutenberg.org/ebooks/${b.id}`,
       }));
 
       setResults(mapped);
@@ -113,6 +146,7 @@ export default function Dashboard({ user }) {
       author: book.author,
       cover_url: book.cover_url || "",
       epub_link: book.epub_link,
+      epub_preview_url: book.epub_preview_url || "",
       updatedAt: serverTimestamp(),
       createdAt: serverTimestamp(),
     }, { merge: true });
@@ -216,13 +250,21 @@ export default function Dashboard({ user }) {
                 <Field label="Author">
                   <input style={inputStyle} value={upAuthor} onChange={(e)=>setUpAuthor(e.target.value)} placeholder="e.g., Jane Austen" />
                 </Field>
+                <Field label="Audio file (mp3/zip/m4b)">
+                  <input
+                    style={inputStyle}
+                    type="file"
+                    accept=".mp3,.zip,.m4b,.m4a,.ogg,.wav"
+                    onChange={(e)=>setUpAudioFile(e.target.files?.[0] || null)}
+                  />
+                </Field>
               </Row>
 
               <Field label="EPUB file">
                 <input style={inputStyle} type="file" accept=".epub" onChange={(e)=>setUpFile(e.target.files?.[0] || null)} />
               </Field>
 
-              <button onClick={uploadEpub} style={{...btnWide, background:"#16a34a"}}>Upload EPUB and save</button>
+              <button onClick={uploadManualFiles} style={{...btnWide, background:"#16a34a"}}>Upload EPUB/AudiBook</button>
               {upStatus && <p style={{ marginTop: 10, color: upStatus.startsWith("Upload failed") ? "#b91c1c" : "#6b7280", fontSize: 13 }}>{upStatus}</p>}
             </div>
           )}
@@ -238,7 +280,7 @@ export default function Dashboard({ user }) {
               <div style={{ display: "grid", gridTemplateColumns: "repeat(1, minmax(0, 1fr))", gap: 12, marginTop: 12 }}>
                 {results.map((r) => (
                   <SearchResultCard
-                    key={r.title + r.author}
+                    key={r.gutenberg_id}
                     book={r}
                     onAddEpub={() => addEpub(r)}
                     onFindAudio={() => findAudio(r.title)}
@@ -285,9 +327,29 @@ function AddTile({ onClick }) {
 }
 
 function BookTile({ book }) {
-  const hasEpub = !!book.epub_link;
-  const hasAudio = !!book.audio_link;
+  const navigate = useNavigate();
+
+  // ✅ include uploads too
+  const hasEpub = !!book.epub_link || !!book.epub_storage_path;
+  const hasAudio = !!book.audio_link || !!book.audio_storage_path;
+
   const badgeText = hasEpub && hasAudio ? "EPUB + Audio" : hasEpub ? "EPUB" : hasAudio ? "Audio" : "Book";
+
+  const linkButtonStyle = {
+    border: "1px solid #e5e7eb",
+    background: "#f9fafb",
+    padding: "8px 12px",
+    borderRadius: 10,
+    fontWeight: 700,
+    cursor: "pointer",
+    fontSize: 12
+  };
+
+  const confirmOpen = (label, url) => {
+    if (!url) return;
+    const ok = window.confirm(`Open ${label}?\n\nThis may download a file.`);
+    if (ok) window.open(url, "_blank", "noopener,noreferrer");
+  };
 
   const coverStyle = book.cover_url
     ? { backgroundImage: `url('${book.cover_url}')`, backgroundSize: "cover", backgroundPosition: "center" }
@@ -315,12 +377,36 @@ function BookTile({ book }) {
           {badgeText}
         </span>
       </div>
+
       <div style={{ padding: "12px 12px 14px", display: "flex", flexDirection: "column", gap: 8, flex: 1 }}>
         <p style={{ margin: 0, fontWeight: 800, fontSize: 14, lineHeight: 1.25 }}>{book.title || "(Untitled)"}</p>
         <p style={{ margin: 0, color: "#6b7280", fontSize: 12 }}>By {book.author || "Unknown"}</p>
+
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: "auto" }}>
-          {hasEpub && <a href={book.epub_link} target="_blank" rel="noreferrer" style={linkStyle}>Open EPUB</a>}
-          {hasAudio && <a href={book.audio_link} target="_blank" rel="noreferrer" style={linkStyle}>Open Audio</a>}
+          {hasEpub && (
+            <button
+              style={linkButtonStyle}
+              onClick={() => confirmOpen("EPUB", book.epub_link)}
+            >
+              Preview EPUB
+            </button>
+          )}
+
+          {hasAudio && (
+            <button
+              style={linkButtonStyle}
+              onClick={() => confirmOpen("Audiobook", book.audio_preview_url || book.audio_link)}
+            >
+              Preview Audio
+            </button>
+          )}
+
+          <button
+            style={linkButtonStyle}
+            onClick={() => navigate(`/reader/${book.id}`)}
+          >
+            Open Reader
+          </button>
         </div>
       </div>
     </div>
@@ -385,7 +471,7 @@ function SearchResultCard({ book, onAddEpub, onFindAudio, onAddAudio, onAddBoth 
 
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {hasEpub && (
-            <a href={book.epub_link} target="_blank" rel="noreferrer" style={miniPreview}>
+            <a href={book.epub_preview_url} target="_blank" rel="noreferrer" style={miniPreview}>
               Preview EPUB
             </a>
           )}
@@ -486,18 +572,6 @@ const btnWide = {
   fontWeight: 900,
   cursor: "pointer",
   marginTop: 8,
-};
-
-const linkStyle = {
-  display: "inline-block",
-  textDecoration: "none",
-  fontSize: 12,
-  fontWeight: 800,
-  padding: "8px 10px",
-  borderRadius: 10,
-  border: "1px solid #e5e7eb",
-  background: "#f9fafb",
-  color: "#111827",
 };
 
 const miniPreview = {

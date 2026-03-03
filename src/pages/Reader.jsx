@@ -1,0 +1,536 @@
+import { useParams, useNavigate } from "react-router-dom";
+import { doc, getDoc } from "firebase/firestore";
+import { db, storage, auth } from "../firebase";
+import { ref, getDownloadURL } from "firebase/storage";
+import { useEffect, useMemo, useRef, useState } from "react";
+import ePub from "epubjs";
+
+import Dashboard from "./Dashboard";
+
+import { onAuthStateChanged } from "firebase/auth";
+import { saveBookForUser } from "../services/saveBook";
+
+export default function Reader() {
+  const { bookId } = useParams();
+  const navigate = useNavigate();
+  const viewerRef = useRef(null);
+  const bookRef = useRef(null);
+  const renditionRef = useRef(null);
+  const audioRef = useRef(null);
+
+  const [page, setPage] = useState("reader"); // "reader" | "bookshelf"
+  const [user, setUser] = useState(null);
+
+  const [status, setStatus] = useState("Upload an EPUB and an MP3 to begin.");
+  const [epubFile, setEpubFile] = useState(null); // local fallback
+
+  const [audioFile, setAudioFile] = useState(null); // local fallback
+  const [audioUrl, setAudioUrl] = useState(null); // can be local object URL OR remote URL
+  const [currentTime, setCurrentTime] = useState(0);
+
+  const [toc, setToc] = useState([]);
+  const [progress, setProgress] = useState(0);
+
+  const [remoteBook, setRemoteBook] = useState(null);
+  const [epubUrl, setEpubUrl] = useState(null); // remote epub URL (storage or external)
+
+  const log = (...args) => console.log("[Bookcover/EPUB]", ...args);
+
+  // ---------------- Auth ----------------
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (u) => setUser(u));
+    return () => unsub();
+  }, []);
+
+  // ---------------- Load book from Firestore when route has bookId ----------------
+  useEffect(() => {
+    if (!user || !bookId) return;
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        setStatus("Loading book from library…");
+        const snap = await getDoc(doc(db, "Users", user.uid, "Books", bookId));
+        if (!snap.exists()) {
+          setStatus("Book not found in your library.");
+          return;
+        }
+
+        const data = snap.data();
+        if (cancelled) return;
+
+        setRemoteBook(data);
+
+        // EPUB resolve
+        if (data.epub_storage_path) {
+          const url = await getDownloadURL(ref(storage, data.epub_storage_path));
+          if (!cancelled) setEpubUrl(url);
+        } else if (data.epub_link) {
+          if (!cancelled) setEpubUrl(data.epub_link);
+        } else {
+          if (!cancelled) setEpubUrl(null);
+        }
+
+        // AUDIO resolve (note: LibriVox zip won't play in <audio>)
+        if (data.audio_storage_path) {
+          const url = await getDownloadURL(ref(storage, data.audio_storage_path));
+          if (!cancelled) setAudioUrl(url);
+        } else if (data.audio_link) {
+          // This might be a ZIP; we still set it so "Preview Audio" can exist elsewhere,
+          // but playback may fail unless it's a direct audio file.
+          if (!cancelled) setAudioUrl(data.audio_link);
+        } else {
+          if (!cancelled) setAudioUrl(null);
+        }
+
+        setStatus("Book loaded. Rendering EPUB…");
+      } catch (e) {
+        console.error("[Reader] loadBook failed:", e);
+        setStatus("Failed to load book (see console).");
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user, bookId]);
+
+  // ---------------- Audio: local file fallback ----------------
+  useEffect(() => {
+    if (!audioFile) return;
+
+    const url = URL.createObjectURL(audioFile);
+    setAudioUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [audioFile]);
+
+  useEffect(() => {
+    const a = audioRef.current;
+    if (!a) return;
+
+    const onTime = () => setCurrentTime(a.currentTime || 0);
+    a.addEventListener("timeupdate", onTime);
+    return () => a.removeEventListener("timeupdate", onTime);
+  }, []);
+
+  const mmss = useMemo(() => {
+    const s = Math.floor(currentTime);
+    const m = Math.floor(s / 60);
+    const r = s % 60;
+    return `${m}:${String(r).padStart(2, "0")}`;
+  }, [currentTime]);
+
+  // ---------------- Save to Firestore (prototype) ----------------
+  const saveCurrentBook = async () => {
+    if (!user) {
+      alert("Please log in first.");
+      return;
+    }
+    if (!epubFile) {
+      alert("Upload an EPUB first (this save button is for the local-file prototype).");
+      return;
+    }
+
+    const title = epubFile.name.replace(/\.epub$/i, "");
+    const id = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+
+    try {
+      await saveBookForUser({
+        uid: user.uid,
+        bookId: id,
+        data: {
+          title,
+          hasAudio: !!audioFile,
+          updatedAtClient: Date.now(),
+        },
+      });
+
+      alert(`Saved "${title}" to your bookshelf!`);
+    } catch (e) {
+      console.error("[Bookcover] save failed:", e);
+      alert("Save failed (see console).");
+    }
+  };
+
+  // ---------------- EPUB helpers ----------------
+  const destroyReader = () => {
+    try {
+      renditionRef.current?.destroy?.();
+    } catch {
+      // ignore
+    }
+    renditionRef.current = null;
+
+    try {
+      bookRef.current?.destroy?.();
+    } catch {
+      // ignore
+    }
+    bookRef.current = null;
+
+    if (viewerRef.current) viewerRef.current.innerHTML = "";
+    setToc([]);
+    setProgress(0);
+  };
+
+  const displayFirstWorkingSpineItem = async (book, rendition) => {
+    const spineItems = book?.spine?.items || [];
+    log("spine items:", spineItems.length);
+
+    const candidates = spineItems
+      .map((it, idx) => ({
+        idx,
+        href: it?.href,
+        idref: it?.idref,
+        linear: it?.linear,
+      }))
+      .filter((x) => typeof x.href === "string" && x.href.trim().length > 0)
+      .filter((x) => {
+        const h = x.href.toLowerCase();
+        const id = (x.idref || "").toLowerCase();
+        if (x.linear === "no") return false;
+        if (h.includes("nav") || h.includes("toc") || h.includes("contents") || h.includes("cover")) return false;
+        if (id.includes("nav") || id.includes("toc") || id.includes("cover")) return false;
+        return true;
+      });
+
+    if (candidates.length === 0) {
+      throw new Error("No valid spine hrefs found after filtering.");
+    }
+
+    const MAX_TRIES = Math.min(30, candidates.length);
+    let lastErr = null;
+
+    for (let i = 0; i < MAX_TRIES; i++) {
+      const c = candidates[i];
+      try {
+        log(`TRY display idx=${c.idx} href=`, c.href);
+        await rendition.display(c.href);
+        log("SUCCESS display href:", c.href);
+        return c.href;
+      } catch (err) {
+        lastErr = err;
+        console.error("[Bookcover/EPUB] display failed for", c.href, err);
+      }
+    }
+
+    throw lastErr || new Error("Failed to display any spine item.");
+  };
+  
+const proxiedUrl = (url) => {
+  // url like: https://www.gutenberg.org/ebooks/64317.epub3.images
+  const u = new URL(url);
+  return `/gutenberg${u.pathname}${u.search}`;
+};
+
+const isGutenberg = (url) =>
+    typeof url === "string" && url.includes("gutenberg.org");
+  
+  const getEpubArrayBuffer = async () => {
+    if (epubUrl) {
+      const finalUrl = isGutenberg(epubUrl)
+        ? `/epub-proxy?url=${encodeURIComponent(epubUrl)}`
+        : epubUrl;
+  
+      const res = await fetch(finalUrl);
+      if (!res.ok) throw new Error(`Failed to fetch EPUB: ${res.status}`);
+      return await res.arrayBuffer();
+    }
+  
+    if (epubFile) return await epubFile.arrayBuffer();
+    return null;
+  };
+
+  // ---------------- EPUB main effect ----------------
+  useEffect(() => {
+    const el = viewerRef.current;
+    if (!el) return;
+
+    destroyReader();
+
+    // If neither remote nor local exists, stop.
+    if (!epubUrl && !epubFile) {
+      setStatus("Upload an EPUB to begin, or open a book from your library.");
+      return;
+    }
+
+    let cancelled = false;
+
+    (async () => {
+      setStatus("Loading EPUB…");
+
+      const buf = await getEpubArrayBuffer();
+      if (!buf) return;
+
+      const book = ePub();
+      bookRef.current = book;
+
+      log("book.open(buf, 'binary')…");
+      await book.open(buf, "binary");
+      await book.ready;
+
+      // Create rendition
+      const rendition = book.renderTo(el, {
+        width: "100%",
+        height: "100%",
+        spread: "none",
+        allowScriptedContent: true,
+      });
+      renditionRef.current = rendition;
+
+      rendition.on("relocated", (location) => {
+        const pct =
+          typeof location?.start?.percentage === "number"
+            ? Math.round(location.start.percentage * 100)
+            : 0;
+        setProgress(pct);
+      });
+
+      try {
+        const nav = await book.loaded.navigation;
+        const tocItems = nav?.toc || [];
+        setToc(tocItems);
+      } catch {
+        setToc([]);
+      }
+
+      if (cancelled) return;
+
+      await displayFirstWorkingSpineItem(book, rendition);
+
+      if (!cancelled) setStatus("EPUB loaded.");
+    })().catch((err) => {
+      console.error("[Bookcover/EPUB] LOAD ERROR:", err);
+      if (!cancelled) setStatus("Failed to display EPUB (see console).");
+    });
+
+    return () => {
+      cancelled = true;
+      destroyReader();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [epubFile, epubUrl]);
+
+  // ---------------- Controls ----------------
+  const nextPage = async () => {
+    try {
+      await renditionRef.current?.next();
+    } catch (e) {
+      console.error("[Bookcover/EPUB] next error:", e);
+    }
+  };
+
+  const prevPage = async () => {
+    try {
+      await renditionRef.current?.prev();
+    } catch (e) {
+      console.error("[Bookcover/EPUB] prev error:", e);
+    }
+  };
+
+  const goToToc = async (href) => {
+    if (!href) return;
+    try {
+      await renditionRef.current?.display(href);
+    } catch (e) {
+      console.error("[Bookcover/EPUB] toc display error:", e);
+    }
+  };
+
+  // ---------------- Page switch ----------------
+  if (page === "bookshelf") {
+    return <Dashboard onBack={() => setPage("reader")} user={user} />;
+  }
+
+  // ---------------- UI ----------------
+  return (
+    <div style={styles.page}>
+      <button
+        onClick={() => navigate("/")}
+        style={styles.bookshelfBtn}
+        title="Go to your bookshelf"
+      >
+        My Bookshelf
+      </button>
+
+      <h1 style={styles.title}>Bookcover Reader (Prototype)</h1>
+      <p style={styles.subtitle}>
+        {status}
+        {remoteBook?.title ? ` — ${remoteBook.title}` : ""}
+      </p>
+
+      <div style={styles.grid}>
+        {/* LEFT: Reader */}
+        <div style={styles.readerCard}>
+          <div style={styles.readerTopBar}>
+            <button style={styles.btn} onClick={prevPage}>
+              Prev
+            </button>
+            <button style={styles.btn} onClick={nextPage}>
+              Next
+            </button>
+
+            <button style={styles.btn} onClick={saveCurrentBook}>
+              Save to Bookshelf
+            </button>
+
+            <div style={styles.progress}>
+              <b>Progress:</b> {progress}%
+            </div>
+
+            <label style={styles.fileLabel}>
+              <span>Text (EPUB)</span>
+              <input
+                type="file"
+                accept=".epub"
+                onChange={(e) => setEpubFile(e.target.files?.[0] || null)}
+              />
+            </label>
+          </div>
+
+          <div ref={viewerRef} style={styles.viewer} />
+        </div>
+
+        {/* RIGHT: Sidebar */}
+        <div style={styles.sidebarCard}>
+          <h2 style={styles.h2}>Audio</h2>
+
+          <input
+            type="file"
+            accept="audio/*"
+            onChange={(e) => setAudioFile(e.target.files?.[0] || null)}
+            style={{ marginBottom: 10 }}
+          />
+
+          <audio
+            ref={audioRef}
+            controls
+            src={audioUrl || undefined}
+            style={{ width: "100%" }}
+          />
+
+          <div style={{ marginTop: 12, color: "#ddd" }}>
+            <div>
+              <b>Current time:</b> {mmss}
+            </div>
+            <div style={{ marginTop: 6, fontSize: 13, color: "#aaa" }}>
+              Note: LibriVox links are often ZIPs and won’t play in-browser unless extracted to an MP3.
+            </div>
+          </div>
+
+          <hr style={styles.hr} />
+
+          <h2 style={styles.h2}>Chapters</h2>
+          {toc.length === 0 ? (
+            <div style={{ color: "#aaa", fontSize: 13 }}>
+              No TOC detected for this EPUB (common).
+            </div>
+          ) : (
+            <div
+              style={{
+                maxHeight: 340,
+                overflow: "auto",
+                display: "grid",
+                gap: 8,
+              }}
+            >
+              {toc.map((item) => (
+                <button
+                  key={item.id || item.href}
+                  onClick={() => goToToc(item.href)}
+                  style={styles.tocBtn}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const styles = {
+  page: {
+    fontFamily: "system-ui, -apple-system, Segoe UI, Roboto",
+    padding: 16,
+    background: "#222",
+    minHeight: "100vh",
+  },
+  bookshelfBtn: {
+    position: "fixed",
+    top: 16,
+    right: 16,
+    padding: "10px 12px",
+    borderRadius: 12,
+    border: "1px solid #ddd",
+    background: "#fff",
+    cursor: "pointer",
+    zIndex: 9999,
+  },
+  title: { margin: 0, color: "#eee", fontSize: 56, letterSpacing: -1 },
+  subtitle: { marginTop: 8, color: "#aaa" },
+  grid: {
+    display: "grid",
+    gridTemplateColumns: "minmax(520px, 1fr) 360px",
+    gap: 16,
+    marginTop: 16,
+    alignItems: "start",
+  },
+  readerCard: {
+    border: "2px solid #555",
+    borderRadius: 16,
+    overflow: "hidden",
+    background: "#111",
+  },
+  readerTopBar: {
+    padding: 12,
+    borderBottom: "1px solid #333",
+    display: "flex",
+    gap: 10,
+    alignItems: "center",
+    flexWrap: "wrap",
+  },
+  btn: {
+    padding: "10px 18px",
+    borderRadius: 14,
+    border: "1px solid #444",
+    background: "#0f0f0f",
+    color: "#eee",
+    cursor: "pointer",
+  },
+  progress: { marginLeft: 8, color: "#ddd", fontSize: 14 },
+  fileLabel: {
+    marginLeft: "auto",
+    color: "#ddd",
+    display: "flex",
+    gap: 8,
+    alignItems: "center",
+  },
+  viewer: {
+    height: "70vh",
+    width: "100%",
+    background: "#fff",
+    overflow: "hidden",
+    borderLeft: "4px solid red",
+  },
+  sidebarCard: {
+    border: "2px solid #555",
+    borderRadius: 16,
+    padding: 14,
+    background: "#111",
+  },
+  h2: { marginTop: 0, color: "#eee" },
+  hr: { margin: "16px 0", borderColor: "#333" },
+  tocBtn: {
+    textAlign: "left",
+    padding: "10px 12px",
+    borderRadius: 12,
+    border: "1px solid #333",
+    background: "#0f0f0f",
+    color: "#ddd",
+    cursor: "pointer",
+  },
+};
