@@ -20,7 +20,7 @@ const COLORS = {
 };
 
 const FONTS = {
-  ui: '"Lora", Georgia, serif',
+  ui: '"Inter", "Helvetica Neue", Arial, sans-serif',
   reading: '"Libre Baskerville", Georgia, serif',
 };
 
@@ -459,18 +459,19 @@ export default function Dashboard({ user }) {
                 />
               </Field>
 
-              <button onClick={uploadManualFiles} style={{ ...btnWide, background: "#16a34a" }}>
-                Upload EPUB/AudiBook
+              <button onClick={uploadManualFiles} style={{ ...btnWide, background: COLORS.spark }}>
+                Upload EPUB / Audiobook
               </button>
               {upStatus && (
                 <p
-                  style={{
-                    marginTop: 10,
-                    color: upStatus.startsWith("Upload failed") ? "#b91c1c" : "#6b7280",
-                    fontSize: 13,
-                  }}
-                >
-                  {upStatus}
+                style={{
+                  marginTop: 12,
+                  color: upStatus.startsWith("Upload failed") ? COLORS.accent : COLORS.mutedInk,
+                  fontSize: 13,
+                  fontFamily: FONTS.ui,
+                }}
+              >
+                {upStatus}
                 </p>
               )}
             </div>
@@ -486,15 +487,16 @@ export default function Dashboard({ user }) {
                   placeholder="Search by title, author…"
                 />
               </Field>
-              <button onClick={searchGutenberg} style={{ ...btnWide, background: "#2563eb" }}>
+              <button onClick={searchGutenberg} style={{ ...btnWide, background: COLORS.frame }}>
                 Search
               </button>
               {searchStatus && (
                 <p
                   style={{
-                    marginTop: 10,
-                    color: searchStatus.includes("failed") ? "#b91c1c" : "#6b7280",
+                    marginTop: 12,
+                    color: searchStatus.includes("failed") ? COLORS.accent : COLORS.mutedInk,
                     fontSize: 13,
+                    fontFamily: FONTS.ui,
                   }}
                 >
                   {searchStatus}
@@ -564,7 +566,7 @@ export default function Dashboard({ user }) {
               />
             </Field>
 
-            <button onClick={saveEditedBook} style={{ ...btnWide, background: "#2563eb" }}>
+            <button onClick={saveEditedBook} style={{ ...btnWide, background: COLORS.spark }}>
               Save Changes
             </button>
 
@@ -935,14 +937,19 @@ function TabButton({ active, onClick, children }) {
     <button
       onClick={onClick}
       style={{
-        border: "1px solid #e5e7eb",
-        background: active ? "rgba(37,99,235,0.10)" : "#f9fafb",
-        borderColor: active ? "rgba(37,99,235,0.35)" : "#e5e7eb",
-        padding: "10px 12px",
+        border: `1px solid ${
+          active ? "rgba(242, 201, 76, 0.55)" : COLORS.border
+        }`,
+        background: active ? "rgba(242, 201, 76, 0.18)" : "rgba(255,255,255,0.55)",
+        color: active ? COLORS.frame : COLORS.ink,
+        padding: "10px 14px",
         borderRadius: 999,
         cursor: "pointer",
-        fontWeight: 800,
-        fontSize: 12,
+        fontWeight: 700,
+        fontSize: 13,
+        fontFamily: FONTS.ui,
+        boxShadow: active ? "0 0 0 1px rgba(242, 201, 76, 0.18)" : "none",
+        transition: "all 0.18s ease",
       }}
     >
       {children}
@@ -956,8 +963,17 @@ function Row({ children }) {
 
 function Field({ label, children }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 6, margin: "10px 0", flex: 1, minWidth: 220 }}>
-      <label style={{ fontSize: 12, color: "#6b7280", fontWeight: 800 }}>{label}</label>
+    <div style={{ display: "flex", flexDirection: "column", gap: 8, margin: "10px 0", flex: 1, minWidth: 220 }}>
+      <label
+        style={{
+          fontSize: 14,
+          color: COLORS.ink,
+          fontWeight: 700,
+          fontFamily: FONTS.reading,
+        }}
+      >
+        {label}
+      </label>
       {children}
     </div>
   );
@@ -971,23 +987,30 @@ const gridStyle = {
 };
 
 const inputStyle = {
-  padding: "10px 10px",
-  border: "1px solid #e5e7eb",
-  borderRadius: 12,
+  padding: "13px 14px",
+  border: `1px solid ${COLORS.border}`,
+  borderRadius: 14,
   outline: "none",
-  background: "#fff",
+  background: "rgba(255,255,255,0.78)",
   width: "100%",
+  color: COLORS.ink,
+  fontFamily: FONTS.ui,
+  fontSize: 15,
+  boxSizing: "border-box",
 };
 
 const btnWide = {
   width: "100%",
   border: "none",
-  borderRadius: 12,
-  padding: "10px 12px",
+  borderRadius: 16,
+  padding: "14px 16px",
   color: "#fff",
-  fontWeight: 900,
+  fontWeight: 800,
   cursor: "pointer",
-  marginTop: 8,
+  marginTop: 10,
+  fontFamily: FONTS.ui,
+  fontSize: 15,
+  boxShadow: "0 10px 24px rgba(18,38,48,0.10)",
 };
 
 const miniPreview = {
@@ -995,21 +1018,23 @@ const miniPreview = {
   alignItems: "center",
   textDecoration: "none",
   fontSize: 12,
-  fontWeight: 900,
+  fontWeight: 700,
   padding: "10px 12px",
-  borderRadius: 10,
-  border: "1px solid #e5e7eb",
-  background: "#f3f4f6",
-  color: "#111827",
+  borderRadius: 12,
+  border: `1px solid ${COLORS.border}`,
+  background: "rgba(255,255,255,0.72)",
+  color: COLORS.ink,
+  fontFamily: FONTS.ui,
 };
 
 const miniBtn = (bg, color) => ({
   border: "none",
-  borderRadius: 10,
+  borderRadius: 12,
   padding: "10px 12px",
   cursor: "pointer",
-  fontWeight: 900,
+  fontWeight: 800,
   fontSize: 12,
   background: bg,
   color,
+  fontFamily: FONTS.ui,
 });

@@ -1,5 +1,20 @@
 import React, { useEffect } from "react";
 
+const COLORS = {
+  canvas: "#F9EAEA",
+  ink: "#122630",
+  frame: "#1A4B5D",
+  spark: "#E67E7E",
+  status: "#F2C94C",
+  accent: "#8E2424",
+  border: "rgba(18, 38, 48, 0.12)",
+};
+
+const FONTS = {
+  ui: '"Inter", "Helvetica Neue", Arial, sans-serif',
+  reading: '"Libre Baskerville", Georgia, serif',
+};
+
 export default function Modal({ open, onClose, title, children }) {
   useEffect(() => {
     const onEsc = (e) => e.key === "Escape" && onClose();
@@ -15,7 +30,7 @@ export default function Modal({ open, onClose, title, children }) {
       style={{
         position: "fixed",
         inset: 0,
-        background: "rgba(17,24,39,0.55)",
+        background: "rgba(18, 38, 48, 0.32)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -25,48 +40,80 @@ export default function Modal({ open, onClose, title, children }) {
     >
       <div
         style={{
-            width: "min(920px, 100%)",
-            maxHeight: "85vh",
-            background: "#fff",
-            borderRadius: 18,
-            boxShadow: "0 10px 25px rgba(0,0,0,0.08)",
-            display: "flex",
-            flexDirection: "column",
+          width: "min(920px, 100%)",
+          maxHeight: "85vh",
+          background: COLORS.canvas,
+          borderRadius: 24,
+          border: `1px solid ${COLORS.border}`,
+          boxShadow: "0 24px 60px rgba(18, 38, 48, 0.18)",
+          display: "flex",
+          flexDirection: "column",
+          overflow: "hidden",
+          position: "relative",
         }}
-        >
+      >
         <div
-            style={{
-                padding: "14px 16px",
-                borderBottom: "1px solid #e5e7eb",
-                position: "sticky",
-                top: 0,
-                background: "#fff",
-                zIndex: 2
-            }}
+          style={{
+            height: 8,
+            background: COLORS.frame,
+            width: "100%",
+          }}
+        />
+
+        <div
+          style={{
+            padding: "22px 24px 18px",
+            borderBottom: `1px solid ${COLORS.border}`,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            background: COLORS.canvas,
+            position: "sticky",
+            top: 0,
+            zIndex: 2,
+          }}
         >
-          <h3 style={{ margin: 0, fontSize: 16 }}>{title}</h3>
+          <h3
+            style={{
+              margin: 0,
+              fontSize: 28,
+              lineHeight: 1.2,
+              color: COLORS.ink,
+              fontFamily: FONTS.reading,
+              fontWeight: 700,
+            }}
+          >
+            {title}
+          </h3>
+
           <button
             onClick={onClose}
             style={{
               border: "none",
               background: "transparent",
-              fontSize: 22,
+              fontSize: 28,
+              lineHeight: 1,
               cursor: "pointer",
-              color: "#6b7280",
+              color: COLORS.ink,
+              fontFamily: FONTS.ui,
+              padding: 0,
             }}
             aria-label="Close"
           >
             ×
           </button>
         </div>
+
         <div
-            style={{
-                padding: "14px 16px 18px",
-                maxHeight: "70vh",
-                overflowY: "auto"
-            }}
-            >
-            {children}
+          style={{
+            padding: "22px 24px 24px",
+            maxHeight: "70vh",
+            overflowY: "auto",
+            fontFamily: FONTS.ui,
+            color: COLORS.ink,
+          }}
+        >
+          {children}
         </div>
       </div>
     </div>
