@@ -7,6 +7,22 @@ import Modal from "../components/Modal";
 import { useNavigate } from "react-router-dom";
 
 const SCRAPER_BASE_URL = "http://localhost:5050";
+const COLORS = {
+  canvas: "#F9EAEA",
+  ink: "#122630",
+  frame: "#1A4B5D",
+  spark: "#E67E7E",
+  status: "#F2C94C",
+  accent: "#8E2424",
+  white: "#FFFFFF",
+  border: "rgba(18, 38, 48, 0.12)",
+  mutedInk: "rgba(18, 38, 48, 0.72)",
+};
+
+const FONTS = {
+  ui: '"Lora", Georgia, serif',
+  reading: '"Libre Baskerville", Georgia, serif',
+};
 
 const generateBookId = (title) =>
   title.toLowerCase().trim().replace(/[^a-z0-9]/g, "-");
@@ -298,7 +314,14 @@ export default function Dashboard({ user }) {
   };
 
   return (
-    <div style={{ background: "#f4f4f9", minHeight: "100vh" }}>
+    <div
+      style={{
+        background: COLORS.canvas,
+        minHeight: "100vh",
+        color: COLORS.ink,
+        fontFamily: FONTS.ui,
+      }}
+    >
       <div style={{ maxWidth: 1100, margin: "0 auto", padding: "24px 16px 40px" }}>
         <div
           style={{
@@ -310,29 +333,35 @@ export default function Dashboard({ user }) {
           }}
         >
           <div>
-            <h1 style={{ margin: 0, fontSize: 22 }}>Bookcover</h1>
-            <p style={{ margin: "4px 0 0", color: "#6b7280", fontSize: 13 }}>Your personal bookshelf</p>
+            <h1 style={{ margin: 0, fontSize: 22, color: COLORS.ink, fontFamily: FONTS.ui }}>
+              Bookcover
+            </h1>
+            <p style={{ margin: "4px 0 0", color: COLORS.mutedInk, fontSize: 13, fontFamily: FONTS.ui }}>
+              Your personal bookshelf
+            </p>
           </div>
           <div
             style={{
               display: "flex",
               alignItems: "center",
               gap: 10,
-              background: "#fff",
-              border: "1px solid #e5e7eb",
-              borderRadius: 12,
+              background: COLORS.white,
+              border: `1px solid ${COLORS.border}`,
+              borderRadius: 14,
               padding: "10px 12px",
-              boxShadow: "0 2px 10px rgba(0,0,0,0.06)",
+              boxShadow: "0 4px 14px rgba(18,38,48,0.08)",
+              fontFamily: FONTS.ui,
             }}
           >
             <span
               style={{
                 fontSize: 12,
-                color: "#6b7280",
+                color: COLORS.mutedInk,
                 maxWidth: 280,
                 overflow: "hidden",
                 textOverflow: "ellipsis",
                 whiteSpace: "nowrap",
+                fontFamily: FONTS.ui,
               }}
             >
               {user.email}
@@ -340,13 +369,15 @@ export default function Dashboard({ user }) {
             <button
               onClick={logout}
               style={{
-                border: "none",
-                borderRadius: 10,
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                background: COLORS.white,
+                border: `1px solid ${COLORS.border}`,
+                borderRadius: 14,
                 padding: "10px 12px",
-                cursor: "pointer",
-                fontWeight: 700,
-                background: "#fee2e2",
-                color: "#991b1b",
+                boxShadow: "0 4px 14px rgba(18,38,48,0.08)",
+                fontFamily: FONTS.ui,
               }}
             >
               Logout
@@ -355,9 +386,10 @@ export default function Dashboard({ user }) {
         </div>
 
         <div style={{ margin: "18px 0 12px" }}>
-          <h2 style={{ margin: 0, fontSize: 18 }}>My Bookshelf</h2>
-          <p style={{ margin: "6px 0 0", color: "#6b7280", fontSize: 13 }}>
-            Add books, then attach EPUB and/or audio to the same entry.
+          <h2 style={{ margin: 0, fontSize: 18, color: COLORS.ink, fontFamily: FONTS.ui }}>
+            My Bookshelf
+          </h2>
+          <p style={{ margin: "6px 0 0", color: COLORS.mutedInk, fontSize: 13, fontFamily: FONTS.ui }}>
           </p>
         </div>
 
@@ -559,10 +591,10 @@ function AddTile({ onClick }) {
     <div
       onClick={onClick}
       style={{
-        background: "rgba(255,255,255,0.7)",
-        border: "2px dashed #cbd5e1",
+        background: "rgba(255,255,255,0.28)",
+        border: "2px dashed rgba(26,75,93,0.16)",
         borderRadius: 16,
-        boxShadow: "0 2px 10px rgba(0,0,0,0.06)",
+        boxShadow: "0 2px 10px rgba(18,38,48,0.04)",
         minHeight: 210,
         cursor: "pointer",
         display: "flex",
@@ -574,24 +606,27 @@ function AddTile({ onClick }) {
       <div style={{ padding: 18 }}>
         <div
           style={{
-            width: 54,
-            height: 54,
+            width: 58,
+            height: 58,
             borderRadius: 999,
-            background: "rgba(37,99,235,0.12)",
-            border: "1px solid rgba(37,99,235,0.25)",
+            background: "rgba(230,126,126,0.10)",
+            border: "1px solid rgba(230,126,126,0.28)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
             fontSize: 34,
-            color: "#2563eb",
-            margin: "0 auto 10px",
+            color: COLORS.frame,
+            margin: "0 auto 12px",
+            fontFamily: FONTS.ui,
           }}
         >
           +
         </div>
-        <b style={{ fontSize: 14 }}>Add new book</b>
+        <b style={{ fontSize: 14, color: COLORS.ink, fontFamily: FONTS.ui }}>Add new book</b>
         <br />
-        <span style={{ fontSize: 12, color: "#6b7280" }}>Upload or search</span>
+        <span style={{ fontSize: 12, color: COLORS.mutedInk, fontFamily: FONTS.ui }}>
+          Upload or search
+        </span>
       </div>
     </div>
   );
