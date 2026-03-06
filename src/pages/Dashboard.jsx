@@ -605,14 +605,22 @@ function BookTile({ book, onEdit, onDelete }) {
 
   const badgeText = hasEpub && hasAudio ? "EPUB + Audio" : hasEpub ? "EPUB" : hasAudio ? "Audio" : "Book";
 
-  const linkButtonStyle = {
-    border: "1px solid #e5e7eb",
-    background: "#f9fafb",
-    padding: "8px 12px",
-    borderRadius: 10,
+  const actionButtonStyle = {
+    border: "1px solid rgba(255,255,255,0.18)",
+    background: "rgba(17,24,39,0.72)",
+    color: "#fff",
+    padding: "7px 10px",
+    borderRadius: 8,
     fontWeight: 700,
     cursor: "pointer",
-    fontSize: 12,
+    fontSize: 11,
+    backdropFilter: "blur(4px)",
+  };
+
+  const deleteButtonStyle = {
+    ...actionButtonStyle,
+    background: "rgba(127,29,29,0.82)",
+    border: "1px solid rgba(254,202,202,0.35)",
   };
 
   const confirmOpen = (label, url) => {
@@ -626,77 +634,150 @@ function BookTile({ book, onEdit, onDelete }) {
         backgroundImage: `url('${book.cover_url}')`,
         backgroundSize: "cover",
         backgroundPosition: "center",
+        backgroundRepeat: "no-repeat",
       }
-    : { background: "linear-gradient(135deg, rgba(37,99,235,0.15), rgba(22,163,74,0.12))" };
+    : {
+        background:
+          "linear-gradient(160deg, rgb(194, 211, 236) 0%, rgb(215, 232, 228) 55%, rgb(184, 204, 230) 100%)",
+      };
 
   return (
     <div
       style={{
-        background: "#fff",
-        border: "1px solid #e5e7eb",
-        borderRadius: 16,
-        boxShadow: "0 2px 10px rgba(0,0,0,0.06)",
-        overflow: "hidden",
-        minHeight: 210,
         display: "flex",
         flexDirection: "column",
+        gap: 10,
       }}
     >
-      <div style={{ height: 120, padding: 12, display: "flex", alignItems: "flex-end", ...coverStyle }}>
-        <span
+      <div
+        style={{
+          position: "relative",
+          width: "100%",
+          aspectRatio: "2 / 3",
+          borderRadius: 14,
+          overflow: "hidden",
+          boxShadow: "0 10px 24px rgba(0,0,0,0.18)",
+          cursor: "pointer",
+          transition: "transform 0.18s ease, box-shadow 0.18s ease",
+          ...coverStyle,
+        }}
+        onClick={() => navigate(`/reader/${book.id}`)}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.transform = "translateY(-4px)";
+          e.currentTarget.style.boxShadow = "0 16px 30px rgba(0,0,0,0.24)";
+          const overlay = e.currentTarget.querySelector(".book-hover-overlay");
+          if (overlay) overlay.style.opacity = "1";
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.transform = "translateY(0)";
+          e.currentTarget.style.boxShadow = "0 10px 24px rgba(0,0,0,0.18)";
+          const overlay = e.currentTarget.querySelector(".book-hover-overlay");
+          if (overlay) overlay.style.opacity = "0";
+        }}
+      >
+        <div
           style={{
-            fontSize: 11,
-            background: "rgba(17,24,39,0.08)",
-            padding: "6px 8px",
+            position: "absolute",
+            inset: 0,
+            background:
+              "linear-gradient(to top, rgba(17,24,39,0.72) 0%, rgba(17,24,39,0.18) 36%, rgba(17,24,39,0.04) 60%)",
+          }}
+        />
+
+        <div
+          style={{
+            position: "absolute",
+            top: 10,
+            left: 10,
+            fontSize: 10,
+            fontWeight: 800,
+            letterSpacing: "0.02em",
+            background: "rgba(255,255,255,0.82)",
+            color: "#111827",
+            padding: "5px 8px",
             borderRadius: 999,
             border: "1px solid rgba(17,24,39,0.08)",
           }}
         >
           {badgeText}
-        </span>
+        </div>
+
+        <div
+          className="book-hover-overlay"
+          style={{
+            position: "absolute",
+            inset: 0,
+            opacity: 0,
+            transition: "opacity 0.18s ease",
+            display: "flex",
+            alignItems: "flex-end",
+            justifyContent: "center",
+            padding: 12,
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div
+            style={{
+              display: "flex",
+              gap: 8,
+              flexWrap: "wrap",
+              justifyContent: "center",
+            }}
+          >
+            <button style={actionButtonStyle} onClick={() => navigate(`/reader/${book.id}`)}>
+              Read
+            </button>
+
+            {hasEpub && (
+              <button
+                style={actionButtonStyle}
+                onClick={() => confirmOpen("EPUB", book.epub_link)}
+              >
+                EPUB
+              </button>
+            )}
+
+            {hasAudio && (
+              <button
+                style={actionButtonStyle}
+                onClick={() => confirmOpen("Audiobook", book.audio_preview_url || book.audio_link)}
+              >
+                Audio
+              </button>
+            )}
+
+            <button style={actionButtonStyle} onClick={() => onEdit(book)}>
+              Edit
+            </button>
+
+            <button style={deleteButtonStyle} onClick={() => onDelete(book)}>
+              Delete
+            </button>
+          </div>
+        </div>
       </div>
 
-      <div style={{ padding: "12px 12px 14px", display: "flex", flexDirection: "column", gap: 8, flex: 1 }}>
-        <p style={{ margin: 0, fontWeight: 800, fontSize: 14, lineHeight: 1.25 }}>
+      <div style={{ minHeight: 44 }}>
+        <div
+          style={{
+            fontSize: 15,
+            fontWeight: 800,
+            lineHeight: 1.25,
+            color: "#111827",
+            marginBottom: 4,
+          }}
+        >
           {book.title || "(Untitled)"}
-        </p>
-        <p style={{ margin: 0, color: "#6b7280", fontSize: 12 }}>By {book.author || "Unknown"}</p>
+        </div>
 
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: "auto" }}>
-          {hasEpub && (
-            <button style={linkButtonStyle} onClick={() => confirmOpen("EPUB", book.epub_link)}>
-              Download EPUB
-            </button>
-          )}
-
-          {hasAudio && (
-            <button
-              style={linkButtonStyle}
-              onClick={() => confirmOpen("Audiobook", book.audio_preview_url || book.audio_link)}
-            >
-              Download Audio
-            </button>
-          )}
-
-          <button style={linkButtonStyle} onClick={() => navigate(`/reader/${book.id}`)}>
-            Open Reader
-          </button>
-
-          <button style={linkButtonStyle} onClick={() => onEdit(book)}>
-            Edit
-          </button>
-
-          <button
-            style={{
-              ...linkButtonStyle,
-              background: "#fee2e2",
-              border: "1px solid #fecaca",
-              color: "#991b1b",
-            }}
-            onClick={() => onDelete(book)}
-          >
-            Delete
-          </button>
+        <div
+          style={{
+            fontSize: 12,
+            color: "#6b7280",
+            lineHeight: 1.3,
+          }}
+        >
+          {book.author || "Unknown"}
         </div>
       </div>
     </div>
@@ -849,8 +930,9 @@ function Field({ label, children }) {
 
 const gridStyle = {
   display: "grid",
-  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-  gap: 14,
+  gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))",
+  gap: 24,
+  alignItems: "start",
 };
 
 const inputStyle = {
