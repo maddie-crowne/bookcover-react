@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { auth, db, storage } from "../firebase";
 import { signOut } from "firebase/auth";
-import { collection, doc, getDocs, setDoc, serverTimestamp } from "firebase/firestore";
-import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
+import { collection, doc, getDocs, setDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
+import { ref, uploadBytes } from "firebase/storage";
 import Modal from "../components/Modal";
 import { useNavigate } from "react-router-dom";
 
@@ -31,6 +31,15 @@ export default function Dashboard({ user }) {
   const [searchStatus, setSearchStatus] = useState("");
   const [results, setResults] = useState([]);
 
+  // edit state
+  const [editOpen, setEditOpen] = useState(false);
+  const [editBook, setEditBook] = useState(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editAuthor, setEditAuthor] = useState("");
+  const [editEpubFile, setEditEpubFile] = useState(null);
+  const [editAudioFile, setEditAudioFile] = useState(null);
+  const [editStatus, setEditStatus] = useState("");
+
   const booksCol = useMemo(() => collection(db, "Users", user.uid, "Books"), [user.uid]);
 
   const loadBooks = async () => {
@@ -40,9 +49,89 @@ export default function Dashboard({ user }) {
     setBooks(list);
   };
 
-  useEffect(() => { loadBooks(); }, []);
+  useEffect(() => {
+    loadBooks();
+  }, []);
+
   const logout = async () => {
     await signOut(auth);
+  };
+
+  const openEditModal = (book) => {
+    setEditBook(book);
+    setEditTitle(book.title || "");
+    setEditAuthor(book.author || "");
+    setEditEpubFile(null);
+    setEditAudioFile(null);
+    setEditStatus("");
+    setEditOpen(true);
+  };
+
+  const closeEditModal = () => {
+    setEditOpen(false);
+    setEditBook(null);
+    setEditTitle("");
+    setEditAuthor("");
+    setEditEpubFile(null);
+    setEditAudioFile(null);
+    setEditStatus("");
+  };
+
+  const saveEditedBook = async () => {
+    if (!editBook) return;
+
+    setEditStatus("");
+
+    try {
+      const updates = {
+        title: editTitle.trim() || "Untitled",
+        author: editAuthor.trim() || "Unknown",
+        updatedAt: serverTimestamp(),
+      };
+
+      if (editEpubFile) {
+        setEditStatus("Uploading new EPUB...");
+        const epubPath = `epubs/${user.uid}/${editBook.id}.epub`;
+        const epubRef = ref(storage, epubPath);
+        await uploadBytes(epubRef, editEpubFile);
+
+        updates.epub_storage_path = epubPath;
+        updates.epub_source = "upload";
+      }
+
+      if (editAudioFile) {
+        setEditStatus("Uploading new audio...");
+        const audioPath = `audio/${user.uid}/${editBook.id}/${editAudioFile.name}`;
+        const audioRef = ref(storage, audioPath);
+        await uploadBytes(audioRef, editAudioFile);
+
+        updates.audio_storage_path = audioPath;
+        updates.audio_source = "upload";
+      }
+
+      setEditStatus("Saving changes...");
+      await setDoc(doc(db, "Users", user.uid, "Books", editBook.id), updates, { merge: true });
+
+      await loadBooks();
+      closeEditModal();
+    } catch (e) {
+      setEditStatus("Edit failed: " + e.message);
+    }
+  };
+
+  const deleteBook = async (book) => {
+    const confirmed = window.confirm(
+      `Delete "${book.title || "this book"}" from your bookshelf?\n\nThis cannot be undone.`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      await deleteDoc(doc(db, "Users", user.uid, "Books", book.id));
+      await loadBooks();
+    } catch (e) {
+      alert("Delete failed: " + e.message);
+    }
   };
 
   // upload manually
@@ -69,48 +158,59 @@ export default function Dashboard({ user }) {
       setUpStatus("Saving book…");
       await setDoc(doc(db, "Users", user.uid, "Books", bookId), baseDoc, { merge: true });
 
-      // EPUB upload
       if (upFile) {
         setUpStatus("Uploading EPUB…");
         const epubPath = `epubs/${user.uid}/${bookId}.epub`;
         const epubRef = ref(storage, epubPath);
         await uploadBytes(epubRef, upFile);
 
-        await setDoc(doc(db, "Users", user.uid, "Books", bookId), {
-          epub_storage_path: epubPath,
-          epub_source: "upload",
-          updatedAt: serverTimestamp(),
-        }, { merge: true });
+        await setDoc(
+          doc(db, "Users", user.uid, "Books", bookId),
+          {
+            epub_storage_path: epubPath,
+            epub_source: "upload",
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true }
+        );
       }
 
-      // Audio upload
       if (upAudioFile) {
         setUpStatus("Uploading audio…");
         const audioPath = `audio/${user.uid}/${bookId}/${upAudioFile.name}`;
         const audioRef = ref(storage, audioPath);
         await uploadBytes(audioRef, upAudioFile);
 
-        await setDoc(doc(db, "Users", user.uid, "Books", bookId), {
-          audio_storage_path: audioPath,
-          audio_source: "upload",
-          updatedAt: serverTimestamp(),
-        }, { merge: true });
+        await setDoc(
+          doc(db, "Users", user.uid, "Books", bookId),
+          {
+            audio_storage_path: audioPath,
+            audio_source: "upload",
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true }
+        );
       }
 
       setUpStatus("Saved ✓");
       setModalOpen(false);
-      setUpTitle(""); setUpAuthor(""); setUpFile(null); setUpAudioFile(null);
+      setUpTitle("");
+      setUpAuthor("");
+      setUpFile(null);
+      setUpAudioFile(null);
       await loadBooks();
     } catch (e) {
       setUpStatus("Upload failed: " + e.message);
     }
   };
 
-  // epub search
   const searchGutenberg = async () => {
     setSearchStatus("");
     setResults([]);
-    if (!q.trim()) { setSearchStatus("Enter a search term."); return; }
+    if (!q.trim()) {
+      setSearchStatus("Enter a search term.");
+      return;
+    }
 
     try {
       setSearchStatus("Searching Gutenberg…");
@@ -141,15 +241,19 @@ export default function Dashboard({ user }) {
 
   const addEpub = async (book) => {
     const id = generateBookId(book.title);
-    await setDoc(doc(db, "Users", user.uid, "Books", id), {
-      title: book.title,
-      author: book.author,
-      cover_url: book.cover_url || "",
-      epub_link: book.epub_link,
-      epub_preview_url: book.epub_preview_url || "",
-      updatedAt: serverTimestamp(),
-      createdAt: serverTimestamp(),
-    }, { merge: true });
+    await setDoc(
+      doc(db, "Users", user.uid, "Books", id),
+      {
+        title: book.title,
+        author: book.author,
+        cover_url: book.cover_url || "",
+        epub_link: book.epub_link,
+        epub_preview_url: book.epub_preview_url || "",
+        updatedAt: serverTimestamp(),
+        createdAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
     await loadBooks();
   };
 
@@ -160,14 +264,18 @@ export default function Dashboard({ user }) {
 
   const addAudio = async (book, audioUrl) => {
     const id = generateBookId(book.title);
-    await setDoc(doc(db, "Users", user.uid, "Books", id), {
-      title: book.title,
-      author: book.author,
-      cover_url: book.cover_url || "",
-      audio_link: audioUrl,
-      updatedAt: serverTimestamp(),
-      createdAt: serverTimestamp(),
-    }, { merge: true });
+    await setDoc(
+      doc(db, "Users", user.uid, "Books", id),
+      {
+        title: book.title,
+        author: book.author,
+        cover_url: book.cover_url || "",
+        audio_link: audioUrl,
+        updatedAt: serverTimestamp(),
+        createdAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
     await loadBooks();
   };
 
@@ -192,28 +300,55 @@ export default function Dashboard({ user }) {
   return (
     <div style={{ background: "#f4f4f9", minHeight: "100vh" }}>
       <div style={{ maxWidth: 1100, margin: "0 auto", padding: "24px 16px 40px" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 18 }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 12,
+            marginBottom: 18,
+          }}
+        >
           <div>
             <h1 style={{ margin: 0, fontSize: 22 }}>Bookcover</h1>
             <p style={{ margin: "4px 0 0", color: "#6b7280", fontSize: 13 }}>Your personal bookshelf</p>
           </div>
-          <div style={{
-            display: "flex", alignItems: "center", gap: 10,
-            background: "#fff", border: "1px solid #e5e7eb",
-            borderRadius: 12, padding: "10px 12px",
-            boxShadow: "0 2px 10px rgba(0,0,0,0.06)"
-          }}>
-            <span style={{
-              fontSize: 12, color: "#6b7280", maxWidth: 280,
-              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
-            }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              background: "#fff",
+              border: "1px solid #e5e7eb",
+              borderRadius: 12,
+              padding: "10px 12px",
+              boxShadow: "0 2px 10px rgba(0,0,0,0.06)",
+            }}
+          >
+            <span
+              style={{
+                fontSize: 12,
+                color: "#6b7280",
+                maxWidth: 280,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
               {user.email}
             </span>
-            <button onClick={logout} style={{
-              border: "none", borderRadius: 10, padding: "10px 12px",
-              cursor: "pointer", fontWeight: 700,
-              background: "#fee2e2", color: "#991b1b"
-            }}>
+            <button
+              onClick={logout}
+              style={{
+                border: "none",
+                borderRadius: 10,
+                padding: "10px 12px",
+                cursor: "pointer",
+                fontWeight: 700,
+                background: "#fee2e2",
+                color: "#991b1b",
+              }}
+            >
               Logout
             </button>
           </div>
@@ -226,58 +361,122 @@ export default function Dashboard({ user }) {
           </p>
         </div>
 
-        {/* library grid */}
         <div style={gridStyle}>
-          <AddTile onClick={() => { setTab("upload"); setModalOpen(true); }} />
+          <AddTile
+            onClick={() => {
+              setTab("upload");
+              setModalOpen(true);
+            }}
+          />
 
           {books.map((b) => (
-            <BookTile key={b.id} book={b} />
+            <BookTile
+              key={b.id}
+              book={b}
+              onEdit={openEditModal}
+              onDelete={deleteBook}
+            />
           ))}
         </div>
 
         <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="Add a new book">
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
-            <TabButton active={tab === "upload"} onClick={() => setTab("upload")}>Manual upload</TabButton>
-            <TabButton active={tab === "search"} onClick={() => setTab("search")}>Search</TabButton>
+            <TabButton active={tab === "upload"} onClick={() => setTab("upload")}>
+              Manual upload
+            </TabButton>
+            <TabButton active={tab === "search"} onClick={() => setTab("search")}>
+              Search
+            </TabButton>
           </div>
 
           {tab === "upload" && (
             <div>
               <Row>
                 <Field label="Book title">
-                  <input style={inputStyle} value={upTitle} onChange={(e)=>setUpTitle(e.target.value)} placeholder="e.g., Pride and Prejudice" />
+                  <input
+                    style={inputStyle}
+                    value={upTitle}
+                    onChange={(e) => setUpTitle(e.target.value)}
+                    placeholder="e.g., Pride and Prejudice"
+                  />
                 </Field>
                 <Field label="Author">
-                  <input style={inputStyle} value={upAuthor} onChange={(e)=>setUpAuthor(e.target.value)} placeholder="e.g., Jane Austen" />
+                  <input
+                    style={inputStyle}
+                    value={upAuthor}
+                    onChange={(e) => setUpAuthor(e.target.value)}
+                    placeholder="e.g., Jane Austen"
+                  />
                 </Field>
                 <Field label="Audio file (mp3/zip/m4b)">
                   <input
                     style={inputStyle}
                     type="file"
                     accept=".mp3,.zip,.m4b,.m4a,.ogg,.wav"
-                    onChange={(e)=>setUpAudioFile(e.target.files?.[0] || null)}
+                    onChange={(e) => setUpAudioFile(e.target.files?.[0] || null)}
                   />
                 </Field>
               </Row>
 
               <Field label="EPUB file">
-                <input style={inputStyle} type="file" accept=".epub" onChange={(e)=>setUpFile(e.target.files?.[0] || null)} />
+                <input
+                  style={inputStyle}
+                  type="file"
+                  accept=".epub"
+                  onChange={(e) => setUpFile(e.target.files?.[0] || null)}
+                />
               </Field>
 
-              <button onClick={uploadManualFiles} style={{...btnWide, background:"#16a34a"}}>Upload EPUB/AudiBook</button>
-              {upStatus && <p style={{ marginTop: 10, color: upStatus.startsWith("Upload failed") ? "#b91c1c" : "#6b7280", fontSize: 13 }}>{upStatus}</p>}
+              <button onClick={uploadManualFiles} style={{ ...btnWide, background: "#16a34a" }}>
+                Upload EPUB/AudiBook
+              </button>
+              {upStatus && (
+                <p
+                  style={{
+                    marginTop: 10,
+                    color: upStatus.startsWith("Upload failed") ? "#b91c1c" : "#6b7280",
+                    fontSize: 13,
+                  }}
+                >
+                  {upStatus}
+                </p>
+              )}
             </div>
           )}
 
           {tab === "search" && (
             <div>
               <Field label="Search Gutenberg (covers included)">
-                <input style={inputStyle} value={q} onChange={(e)=>setQ(e.target.value)} placeholder="Search by title, author…" />
+                <input
+                  style={inputStyle}
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                  placeholder="Search by title, author…"
+                />
               </Field>
-              <button onClick={searchGutenberg} style={{...btnWide, background:"#2563eb"}}>Search</button>
-              {searchStatus && <p style={{ marginTop: 10, color: searchStatus.includes("failed") ? "#b91c1c" : "#6b7280", fontSize: 13 }}>{searchStatus}</p>}
+              <button onClick={searchGutenberg} style={{ ...btnWide, background: "#2563eb" }}>
+                Search
+              </button>
+              {searchStatus && (
+                <p
+                  style={{
+                    marginTop: 10,
+                    color: searchStatus.includes("failed") ? "#b91c1c" : "#6b7280",
+                    fontSize: 13,
+                  }}
+                >
+                  {searchStatus}
+                </p>
+              )}
 
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(1, minmax(0, 1fr))", gap: 12, marginTop: 12 }}>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(1, minmax(0, 1fr))",
+                  gap: 12,
+                  marginTop: 12,
+                }}
+              >
                 {results.map((r) => (
                   <SearchResultCard
                     key={r.gutenberg_id}
@@ -292,6 +491,64 @@ export default function Dashboard({ user }) {
             </div>
           )}
         </Modal>
+
+        <Modal open={editOpen} onClose={closeEditModal} title="Edit book">
+          <div>
+            <Row>
+              <Field label="Book title">
+                <input
+                  style={inputStyle}
+                  value={editTitle}
+                  onChange={(e) => setEditTitle(e.target.value)}
+                  placeholder="Book title"
+                />
+              </Field>
+
+              <Field label="Author">
+                <input
+                  style={inputStyle}
+                  value={editAuthor}
+                  onChange={(e) => setEditAuthor(e.target.value)}
+                  placeholder="Author"
+                />
+              </Field>
+            </Row>
+
+            <Field label="Replace EPUB file">
+              <input
+                style={inputStyle}
+                type="file"
+                accept=".epub"
+                onChange={(e) => setEditEpubFile(e.target.files?.[0] || null)}
+              />
+            </Field>
+
+            <Field label="Replace audio file">
+              <input
+                style={inputStyle}
+                type="file"
+                accept=".mp3,.zip,.m4b,.m4a,.ogg,.wav"
+                onChange={(e) => setEditAudioFile(e.target.files?.[0] || null)}
+              />
+            </Field>
+
+            <button onClick={saveEditedBook} style={{ ...btnWide, background: "#2563eb" }}>
+              Save Changes
+            </button>
+
+            {editStatus && (
+              <p
+                style={{
+                  marginTop: 10,
+                  color: editStatus.startsWith("Edit failed") ? "#b91c1c" : "#6b7280",
+                  fontSize: 13,
+                }}
+              >
+                {editStatus}
+              </p>
+            )}
+          </div>
+        </Modal>
       </div>
     </div>
   );
@@ -299,37 +556,50 @@ export default function Dashboard({ user }) {
 
 function AddTile({ onClick }) {
   return (
-    <div onClick={onClick} style={{
-      background: "rgba(255,255,255,0.7)",
-      border: "2px dashed #cbd5e1",
-      borderRadius: 16,
-      boxShadow: "0 2px 10px rgba(0,0,0,0.06)",
-      minHeight: 210,
-      cursor: "pointer",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      textAlign: "center"
-    }}>
+    <div
+      onClick={onClick}
+      style={{
+        background: "rgba(255,255,255,0.7)",
+        border: "2px dashed #cbd5e1",
+        borderRadius: 16,
+        boxShadow: "0 2px 10px rgba(0,0,0,0.06)",
+        minHeight: 210,
+        cursor: "pointer",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        textAlign: "center",
+      }}
+    >
       <div style={{ padding: 18 }}>
-        <div style={{
-          width: 54, height: 54, borderRadius: 999,
-          background: "rgba(37,99,235,0.12)",
-          border: "1px solid rgba(37,99,235,0.25)",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          fontSize: 34, color: "#2563eb", margin: "0 auto 10px"
-        }}>+</div>
-        <b style={{ fontSize: 14 }}>Add new book</b><br />
+        <div
+          style={{
+            width: 54,
+            height: 54,
+            borderRadius: 999,
+            background: "rgba(37,99,235,0.12)",
+            border: "1px solid rgba(37,99,235,0.25)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 34,
+            color: "#2563eb",
+            margin: "0 auto 10px",
+          }}
+        >
+          +
+        </div>
+        <b style={{ fontSize: 14 }}>Add new book</b>
+        <br />
         <span style={{ fontSize: 12, color: "#6b7280" }}>Upload or search</span>
       </div>
     </div>
   );
 }
 
-function BookTile({ book }) {
+function BookTile({ book, onEdit, onDelete }) {
   const navigate = useNavigate();
 
-  // ✅ include uploads too
   const hasEpub = !!book.epub_link || !!book.epub_storage_path;
   const hasAudio = !!book.audio_link || !!book.audio_storage_path;
 
@@ -342,7 +612,7 @@ function BookTile({ book }) {
     borderRadius: 10,
     fontWeight: 700,
     cursor: "pointer",
-    fontSize: 12
+    fontSize: 12,
   };
 
   const confirmOpen = (label, url) => {
@@ -352,42 +622,49 @@ function BookTile({ book }) {
   };
 
   const coverStyle = book.cover_url
-    ? { backgroundImage: `url('${book.cover_url}')`, backgroundSize: "cover", backgroundPosition: "center" }
+    ? {
+        backgroundImage: `url('${book.cover_url}')`,
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+      }
     : { background: "linear-gradient(135deg, rgba(37,99,235,0.15), rgba(22,163,74,0.12))" };
 
   return (
-    <div style={{
-      background: "#fff",
-      border: "1px solid #e5e7eb",
-      borderRadius: 16,
-      boxShadow: "0 2px 10px rgba(0,0,0,0.06)",
-      overflow: "hidden",
-      minHeight: 210,
-      display: "flex",
-      flexDirection: "column"
-    }}>
+    <div
+      style={{
+        background: "#fff",
+        border: "1px solid #e5e7eb",
+        borderRadius: 16,
+        boxShadow: "0 2px 10px rgba(0,0,0,0.06)",
+        overflow: "hidden",
+        minHeight: 210,
+        display: "flex",
+        flexDirection: "column",
+      }}
+    >
       <div style={{ height: 120, padding: 12, display: "flex", alignItems: "flex-end", ...coverStyle }}>
-        <span style={{
-          fontSize: 11,
-          background: "rgba(17,24,39,0.08)",
-          padding: "6px 8px",
-          borderRadius: 999,
-          border: "1px solid rgba(17,24,39,0.08)"
-        }}>
+        <span
+          style={{
+            fontSize: 11,
+            background: "rgba(17,24,39,0.08)",
+            padding: "6px 8px",
+            borderRadius: 999,
+            border: "1px solid rgba(17,24,39,0.08)",
+          }}
+        >
           {badgeText}
         </span>
       </div>
 
       <div style={{ padding: "12px 12px 14px", display: "flex", flexDirection: "column", gap: 8, flex: 1 }}>
-        <p style={{ margin: 0, fontWeight: 800, fontSize: 14, lineHeight: 1.25 }}>{book.title || "(Untitled)"}</p>
+        <p style={{ margin: 0, fontWeight: 800, fontSize: 14, lineHeight: 1.25 }}>
+          {book.title || "(Untitled)"}
+        </p>
         <p style={{ margin: 0, color: "#6b7280", fontSize: 12 }}>By {book.author || "Unknown"}</p>
 
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: "auto" }}>
           {hasEpub && (
-            <button
-              style={linkButtonStyle}
-              onClick={() => confirmOpen("EPUB", book.epub_link)}
-            >
+            <button style={linkButtonStyle} onClick={() => confirmOpen("EPUB", book.epub_link)}>
               Download EPUB
             </button>
           )}
@@ -401,11 +678,24 @@ function BookTile({ book }) {
             </button>
           )}
 
-          <button
-            style={linkButtonStyle}
-            onClick={() => navigate(`/reader/${book.id}`)}
-          >
+          <button style={linkButtonStyle} onClick={() => navigate(`/reader/${book.id}`)}>
             Open Reader
+          </button>
+
+          <button style={linkButtonStyle} onClick={() => onEdit(book)}>
+            Edit
+          </button>
+
+          <button
+            style={{
+              ...linkButtonStyle,
+              background: "#fee2e2",
+              border: "1px solid #fecaca",
+              color: "#991b1b",
+            }}
+            onClick={() => onDelete(book)}
+          >
+            Delete
           </button>
         </div>
       </div>
@@ -449,21 +739,31 @@ function SearchResultCard({ book, onAddEpub, onFindAudio, onAddAudio, onAddBoth 
   };
 
   return (
-    <div style={{
-      border: "1px solid #e5e7eb",
-      borderRadius: 16,
-      background: "#fff",
-      boxShadow: "0 2px 10px rgba(0,0,0,0.06)",
-      display: "flex",
-      gap: 12,
-      padding: 12,
-      alignItems: "flex-start"
-    }}>
+    <div
+      style={{
+        border: "1px solid #e5e7eb",
+        borderRadius: 16,
+        background: "#fff",
+        boxShadow: "0 2px 10px rgba(0,0,0,0.06)",
+        display: "flex",
+        gap: 12,
+        padding: 12,
+        alignItems: "flex-start",
+      }}
+    >
       <img
         src={book.cover_url || coverFallback}
-        onError={(e) => { e.currentTarget.src = coverFallback; }}
+        onError={(e) => {
+          e.currentTarget.src = coverFallback;
+        }}
         alt="Cover"
-        style={{ width: 74, height: 110, objectFit: "cover", borderRadius: 10, border: "1px solid rgba(17,24,39,0.08)" }}
+        style={{
+          width: 74,
+          height: 110,
+          objectFit: "cover",
+          borderRadius: 10,
+          border: "1px solid rgba(17,24,39,0.08)",
+        }}
       />
       <div style={{ flex: 1, minWidth: 0 }}>
         <h4 style={{ margin: "0 0 6px", fontSize: 14, lineHeight: 1.2 }}>{book.title}</h4>
@@ -478,7 +778,11 @@ function SearchResultCard({ book, onAddEpub, onFindAudio, onAddAudio, onAddBoth 
 
           <button
             disabled={!hasEpub}
-            onClick={async () => { setRowStatus("Adding EPUB…"); await onAddEpub(); setRowStatus("EPUB added ✓"); }}
+            onClick={async () => {
+              setRowStatus("Adding EPUB…");
+              await onAddEpub();
+              setRowStatus("EPUB added ✓");
+            }}
             style={miniBtn("#16a34a", "white")}
           >
             {hasEpub ? "Add EPUB" : "No EPUB"}
@@ -504,17 +808,12 @@ function SearchResultCard({ book, onAddEpub, onFindAudio, onAddAudio, onAddBoth 
           )}
         </div>
 
-        {rowStatus && (
-          <div style={{ marginTop: 8, fontSize: 12, color: "#6b7280" }}>
-            {rowStatus}
-          </div>
-        )}
+        {rowStatus && <div style={{ marginTop: 8, fontSize: 12, color: "#6b7280" }}>{rowStatus}</div>}
       </div>
     </div>
   );
 }
 
-/* small UI helpers */
 function TabButton({ active, onClick, children }) {
   return (
     <button
@@ -527,7 +826,7 @@ function TabButton({ active, onClick, children }) {
         borderRadius: 999,
         cursor: "pointer",
         fontWeight: 800,
-        fontSize: 12
+        fontSize: 12,
       }}
     >
       {children}
