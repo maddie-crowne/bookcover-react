@@ -9,6 +9,21 @@ import Dashboard from "./Dashboard";
 
 import { onAuthStateChanged } from "firebase/auth";
 import { saveBookForUser } from "../services/saveBook";
+const COLORS = {
+  canvas: "#F9EAEA",
+  ink: "#122630",
+  frame: "#1A4B5D",
+  spark: "#E67E7E",
+  status: "#F2C94C",
+  accent: "#8E2424",
+  white: "#FFFFFF",
+  border: "rgba(18, 38, 48, 0.12)",
+  mutedInk: "rgba(18, 38, 48, 0.72)",
+};
+const FONTS = {
+  ui: '"Lora", Georgia, serif',
+  reading: '"Libre Baskerville", Georgia, serif',
+};
 
 export default function Reader() {
   const { bookId } = useParams();
@@ -278,6 +293,30 @@ const isGutenberg = (url) =>
         allowScriptedContent: true,
       });
       renditionRef.current = rendition;
+      rendition.themes.default({
+        body: {
+          "font-family": '"Libre Baskerville", Georgia, serif !important',
+          color: COLORS.ink,
+          "background-color": COLORS.canvas,
+          "line-height": "1.7",
+        },
+        p: {
+          "font-family": '"Libre Baskerville", Georgia, serif !important',
+          "line-height": "1.7",
+        },
+        h1: {
+          "font-family": '"Libre Baskerville", Georgia, serif !important',
+          color: COLORS.ink,
+        },
+        h2: {
+          "font-family": '"Libre Baskerville", Georgia, serif !important',
+          color: COLORS.ink,
+        },
+        h3: {
+          "font-family": '"Libre Baskerville", Georgia, serif !important',
+          color: COLORS.ink,
+        },
+      });
 
       rendition.on("relocated", (location) => {
         const pct =
@@ -354,7 +393,7 @@ const isGutenberg = (url) =>
         My Bookshelf
       </button>
 
-      <h1 style={styles.title}>Bookcover Reader (Prototype)</h1>
+      <h1 style={styles.title}>Reader</h1>
       <p style={styles.subtitle}>
         {status}
         {remoteBook?.title ? ` — ${remoteBook.title}` : ""}
@@ -400,7 +439,10 @@ const isGutenberg = (url) =>
             type="file"
             accept="audio/*"
             onChange={(e) => setAudioFile(e.target.files?.[0] || null)}
-            style={{ marginBottom: 10 }}
+            style={{
+              marginBottom: 10,
+              color: "#fff",
+            }}
           />
 
           <audio
@@ -410,11 +452,20 @@ const isGutenberg = (url) =>
             style={{ width: "100%" }}
           />
 
-          <div style={{ marginTop: 12, color: "#ddd" }}>
+          <div
+            style={{
+              marginTop: 12,
+              color: COLORS.white,
+              background: "rgba(255,255,255,0.08)",
+              border: "1px solid rgba(255,255,255,0.14)",
+              borderRadius: 14,
+              padding: 12,
+            }}
+          >
             <div>
               <b>Current time:</b> {mmss}
             </div>
-            <div style={{ marginTop: 6, fontSize: 13, color: "#aaa" }}>
+            <div style={{ marginTop: 6, fontSize: 13, color: "rgba(255,255,255,0.8)" }}>
               Note: LibriVox links are often ZIPs and won’t play in-browser unless extracted to an MP3.
             </div>
           </div>
@@ -423,7 +474,7 @@ const isGutenberg = (url) =>
 
           <h2 style={styles.h2}>Chapters</h2>
           {toc.length === 0 ? (
-            <div style={{ color: "#aaa", fontSize: 13 }}>
+            <div style={{ color: "rgba(255,255,255,0.8)", fontSize: 13 }}>
               No TOC detected for this EPUB (common).
             </div>
           ) : (
@@ -454,83 +505,144 @@ const isGutenberg = (url) =>
 
 const styles = {
   page: {
-    fontFamily: "system-ui, -apple-system, Segoe UI, Roboto",
-    padding: 16,
-    background: "#222",
+    fontFamily: FONTS.ui,
+    padding: 20,
+    background: COLORS.canvas,
     minHeight: "100vh",
+    color: COLORS.ink,
   },
+
   bookshelfBtn: {
+    fontFamily: FONTS.ui,
     position: "fixed",
     top: 16,
     right: 16,
-    padding: "10px 12px",
-    borderRadius: 12,
-    border: "1px solid #ddd",
-    background: "#fff",
+    padding: "10px 14px",
+    borderRadius: 14,
+    border: `1px solid ${COLORS.border}`,
+    background: COLORS.white,
+    color: COLORS.ink,
     cursor: "pointer",
     zIndex: 9999,
+    fontWeight: 700,
+    boxShadow: "0 4px 14px rgba(18,38,48,0.08)",
   },
-  title: { margin: 0, color: "#eee", fontSize: 56, letterSpacing: -1 },
-  subtitle: { marginTop: 8, color: "#aaa" },
+
+  title: {
+    fontFamily: FONTS.ui,
+    margin: 0,
+    color: COLORS.ink,
+    fontSize: 56,
+    letterSpacing: -1,
+    lineHeight: 1,
+  },
+
+  subtitle: {
+    fontFamily: FONTS.ui,
+    marginTop: 10,
+    color: COLORS.mutedInk,
+    fontSize: 18,
+  },
+
   grid: {
     display: "grid",
     gridTemplateColumns: "minmax(520px, 1fr) 360px",
-    gap: 16,
-    marginTop: 16,
+    gap: 18,
+    marginTop: 18,
     alignItems: "start",
   },
+
   readerCard: {
-    border: "2px solid #555",
-    borderRadius: 16,
+    border: `1px solid ${COLORS.border}`,
+    borderRadius: 20,
     overflow: "hidden",
-    background: "#111",
+    background: COLORS.white,
+    boxShadow: "0 10px 24px rgba(18,38,48,0.08)",
   },
+
   readerTopBar: {
-    padding: 12,
-    borderBottom: "1px solid #333",
+    padding: 14,
+    borderBottom: `1px solid ${COLORS.border}`,
     display: "flex",
     gap: 10,
     alignItems: "center",
     flexWrap: "wrap",
+    background: COLORS.canvas,
   },
+
   btn: {
-    padding: "10px 18px",
+    fontFamily: FONTS.ui,
+    padding: "10px 16px",
     borderRadius: 14,
-    border: "1px solid #444",
-    background: "#0f0f0f",
-    color: "#eee",
+    border: "none",
+    background: COLORS.spark,
+    color: COLORS.white,
     cursor: "pointer",
+    fontWeight: 700,
+    boxShadow: "0 4px 10px rgba(230,126,126,0.25)",
   },
-  progress: { marginLeft: 8, color: "#ddd", fontSize: 14 },
+
+  progress: {
+    fontFamily: FONTS.ui,
+    marginLeft: 8,
+    color: COLORS.ink,
+    fontSize: 14,
+    background: "rgba(242,201,76,0.25)",
+    padding: "8px 10px",
+    borderRadius: 12,
+    border: "1px solid rgba(242,201,76,0.35)",
+  },
+
   fileLabel: {
+    fontFamily: FONTS.ui,
     marginLeft: "auto",
-    color: "#ddd",
+    color: COLORS.ink,
     display: "flex",
     gap: 8,
     alignItems: "center",
+    fontWeight: 600,
   },
+
   viewer: {
     height: "70vh",
     width: "100%",
-    background: "#fff",
+    background: COLORS.canvas,
     overflow: "hidden",
-    borderLeft: "4px solid red",
+    borderLeft: `6px solid ${COLORS.frame}`,
+    fontFamily: '"Libre Baskerville", Georgia, serif',
   },
+
   sidebarCard: {
-    border: "2px solid #555",
-    borderRadius: 16,
-    padding: 14,
-    background: "#111",
+    border: "none",
+    borderRadius: 20,
+    padding: 16,
+    background: COLORS.frame,
+    boxShadow: "0 10px 24px rgba(18,38,48,0.16)",
   },
-  h2: { marginTop: 0, color: "#eee" },
-  hr: { margin: "16px 0", borderColor: "#333" },
+
+  h2: {
+    fontFamily: FONTS.ui,
+    marginTop: 0,
+    color: COLORS.white,
+    fontSize: 24,
+    marginBottom: 12,
+  },
+
+  hr: {
+    margin: "18px 0",
+    border: "none",
+    borderTop: "1px solid rgba(255,255,255,0.18)",
+  },
+
   tocBtn: {
+    fontFamily: FONTS.ui,
     textAlign: "left",
     padding: "10px 12px",
     borderRadius: 12,
-    border: "1px solid #333",
-    background: "#0f0f0f",
-    color: "#ddd",
+    border: "1px solid rgba(255,255,255,0.14)",
+    background: "rgba(18,38,48,0.18)",
+    color: COLORS.white,
     cursor: "pointer",
+    fontWeight: 500,
   },
 };
