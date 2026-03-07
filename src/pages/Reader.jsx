@@ -21,8 +21,9 @@ const COLORS = {
   mutedInk: "rgba(18, 38, 48, 0.72)",
 };
 const FONTS = {
-  ui: '"Lora", Georgia, serif',
-  reading: '"Libre Baskerville", Georgia, serif',
+  headings: '"Merriweather", serif',
+  ui: '"Inter", sans-serif',
+  reading: '"Source Serif 4", serif',
 };
 
 export default function Reader() {
@@ -50,6 +51,12 @@ export default function Reader() {
   const [epubUrl, setEpubUrl] = useState(null); // remote epub URL (storage or external)
 
   const log = (...args) => console.log("[Bookcover/EPUB]", ...args);
+
+  const [hoverPrev, setHoverPrev] = useState(false);
+  const [hoverNext, setHoverNext] = useState(false);
+  const [hoverSave, setHoverSave] = useState(false);
+  const [hoverBookshelf, setHoverBookshelf] = useState(false);
+  
 
   // ---------------- Auth ----------------
   useEffect(() => {
@@ -387,7 +394,31 @@ const isGutenberg = (url) =>
     <div style={styles.page}>
       <button
         onClick={() => navigate("/")}
-        style={styles.bookshelfBtn}
+        onMouseEnter={() => setHoverBookshelf(true)}
+        onMouseLeave={() => setHoverBookshelf(false)}
+        style={{
+          ...styles.bookshelfBtn,
+          // --- BRAND TYPOGRAPHY ---
+          fontFamily: FONTS.headings, 
+          fontWeight: "bold",
+
+          background: COLORS.frame, // Always Blue
+          color: COLORS.white,      // White text for contrast
+          
+          // --- HOVER TRANSFORM & COLOR ---
+          
+          transform: hoverBookshelf ? "translateY(-4px)" : "translateY(0)",
+          
+          // --- CORAL SHADOW ---
+          boxShadow: hoverBookshelf 
+            ? "0 10px 20px rgba(26, 75, 93, 0.45)" // Stronger Blue highlight on hover
+            : "0 4px 14px rgba(18, 38, 48, 0.15)",
+            
+          transition: "all 0.3s ease",
+          border: "none",
+          cursor: "pointer",
+          zIndex: 9999,
+        }}
         title="Go to your bookshelf"
       >
         My Bookshelf
@@ -403,19 +434,49 @@ const isGutenberg = (url) =>
         {/* LEFT: Reader */}
         <div style={styles.readerCard}>
           <div style={styles.readerTopBar}>
-            <button style={styles.btn} onClick={prevPage}>
+            <button 
+              onClick={prevPage}
+              onMouseEnter={() => setHoverPrev(true)}
+              onMouseLeave={() => setHoverPrev(false)}
+              style={{
+                ...styles.btn,
+                transform: hoverPrev ? "translateY(-3px)" : "translateY(0)",
+                boxShadow: hoverPrev ? "0 8px 20px rgba(230, 126, 126, 0.4)" : styles.btn.boxShadow,
+                transition: "all 0.2s ease"
+              }}  
+            >
               Prev
             </button>
-            <button style={styles.btn} onClick={nextPage}>
+            <button 
+              onClick={nextPage}
+              onMouseEnter={() => setHoverNext(true)}
+              onMouseLeave={() => setHoverNext(false)}
+              style={{
+                ...styles.btn,
+                transform: hoverNext ? "translateY(-3px)" : "translateY(0)",
+                boxShadow: hoverNext ? "0 8px 20px rgba(230, 126, 126, 0.4)" : styles.btn.boxShadow,
+                transition: "all 0.2s ease"
+              }}
+            >
               Next
             </button>
 
-            <button style={styles.btn} onClick={saveCurrentBook}>
+            <button 
+              onClick={saveCurrentBook}
+              onMouseEnter={() => setHoverSave(true)}
+              onMouseLeave={() => setHoverSave(false)}
+              style={{
+                ...styles.btn,
+                transform: hoverSave ? "translateY(-3px)" : "translateY(0)",
+                boxShadow: hoverSave ? "0 8px 20px rgba(230, 126, 126, 0.4)" : styles.btn.boxShadow,
+                transition: "all 0.2s ease"
+              }}
+            >
               Save to Bookshelf
             </button>
 
             <div style={styles.progress}>
-              <b>Progress:</b> {progress}%
+              <b style={{ fontFamily: FONTS.headings }}>Progress:</b> {progress}%
             </div>
 
             <label style={styles.fileLabel}>
@@ -529,7 +590,7 @@ const styles = {
   },
 
   title: {
-    fontFamily: FONTS.ui,
+    fontFamily: FONTS.headings, //FONTS.ui,
     margin: 0,
     color: COLORS.ink,
     fontSize: 56,
