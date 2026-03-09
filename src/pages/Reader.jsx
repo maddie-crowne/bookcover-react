@@ -56,8 +56,12 @@ export default function Reader() {
   const [hoverNext, setHoverNext] = useState(false);
   const [hoverSave, setHoverSave] = useState(false);
   const [hoverBookshelf, setHoverBookshelf] = useState(false);
-  
 
+  const [currentPage, setCurrentPage] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
+  
+  const [fontSize, setFontSize] = useState(100); 
+  const [spread, setSpread] = useState("none");
   // ---------------- Auth ----------------
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => setUser(u));
@@ -296,9 +300,9 @@ const isGutenberg = (url) =>
       const rendition = book.renderTo(el, {
         width: "100%",
         height: "100%",
-        spread: "none",
+        spread: spread,
         allowScriptedContent: true,
-      });
+      })
       renditionRef.current = rendition;
       rendition.themes.default({
         body: {
@@ -326,11 +330,19 @@ const isGutenberg = (url) =>
       });
 
       rendition.on("relocated", (location) => {
-        const pct =
-          typeof location?.start?.percentage === "number"
-            ? Math.round(location.start.percentage * 100)
-            : 0;
-        setProgress(pct);
+        console.log("[relocated]", JSON.stringify(location, null, 2));
+        const pct = location?.start?.percentage;
+        if (typeof pct === "number" && !isNaN(pct)) {
+          setProgress(Math.round(pct * 100));
+        }
+        // Page numbers via epubjs locations
+        if (location?.start?.location) {
+          setCurrentPage(location.start.location);
+        }
+      });
+
+      book.locations.generate(1024).then(() => {
+        setTotalPages(book.locations.total);
       });
 
       try {
@@ -357,6 +369,16 @@ const isGutenberg = (url) =>
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [epubFile, epubUrl]);
+
+  useEffect(() => {
+    if (!renditionRef.current) return;
+    renditionRef.current.themes.fontSize(`${fontSize}%`);
+  }, [fontSize]);
+
+  useEffect(() => {
+    if (!renditionRef.current) return;
+    renditionRef.current.spread(spread);
+  }, [spread]);
 
   // ---------------- Controls ----------------
   const nextPage = async () => {
@@ -475,9 +497,66 @@ const isGutenberg = (url) =>
               Save to Bookshelf
             </button>
 
-            <div style={styles.progress}>
-              <b style={{ fontFamily: FONTS.headings }}>Progress:</b> {progress}%
+            <div style={{ ...styles.progress, display: "flex", flexDirection: "column", gap: 4, minWidth: 180 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
+                <span><b>Page</b> {currentPage}{totalPages > 0 ? ` / ${totalPages}` : ""}</span>
+                <span><b>{progress}%</b></span>
+              </div>
+              <div style={{
+                height: 6,
+                borderRadius: 999,
+                background: "rgba(18,38,48,0.12)",
+                overflow: "hidden",
+              }}>
+                <div style={{
+                  height: "100%",
+                  width: `${progress}%`,
+                  background: COLORS.frame,
+                  borderRadius: 999,
+                  transition: "width 0.4s ease",
+                }} />
+              </div>
             </div>
+            
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <button
+                onClick={() => setFontSize(f => Math.max(60, f - 10))}
+                style={{ ...styles.btn, padding: "6px 10px", fontSize: 16 }}
+              >A−</button>
+              <span style={{ fontSize: 12, color: COLORS.ink, fontFamily: FONTS.ui }}>{fontSize}%</span>
+              <button
+                onClick={() => setFontSize(f => Math.min(200, f + 10))}
+                style={{ ...styles.btn, padding: "6px 10px", fontSize: 16 }}
+              >A+</button>
+            </div>
+            
+            <div style={{ display: "flex", gap: 4, background: "rgba(18,38,48,0.06)", borderRadius: 8, padding: 3 }}>
+              <button
+                onClick={() => setSpread("none")}
+                style={{
+                  ...styles.btn,
+                  padding: "6px 10px",
+                  fontSize: 12,
+                  background: spread === "none" ? COLORS.frame : "transparent",
+                  color: spread === "none" ? COLORS.white : COLORS.ink,
+                  boxShadow: "none",
+                }}
+                title="Single page"
+              >▭</button>
+              <button
+                onClick={() => setSpread("always")}
+                style={{
+                  ...styles.btn,
+                  padding: "6px 10px",
+                  fontSize: 12,
+                  background: spread === "always" ? COLORS.frame : "transparent",
+                  color: spread === "always" ? COLORS.white : COLORS.ink,
+                  boxShadow: "none",
+                }}
+                title="Two pages"
+              >▭▭</button>
+            </div>
+
 
             <label style={styles.fileLabel}>
               <span>Text (EPUB)</span>
