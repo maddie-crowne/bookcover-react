@@ -62,6 +62,26 @@ export default function Reader() {
   
   const [fontSize, setFontSize] = useState(100); 
   const [spread, setSpread] = useState("none");
+
+  const [darkMode, setDarkMode] = useState(false);
+  const THEME = darkMode ? {
+    canvas: "#1a1a2e",
+    ink: "#e8e8f0",
+    frame: "#4a9eba",
+    mutedInk: "rgba(232,232,240,0.65)",
+    white: "#16213e",
+    border: "rgba(232,232,240,0.12)",
+    sidebarBg: "#0f3460",
+  } : {
+    canvas: COLORS.canvas,
+    ink: COLORS.ink,
+    frame: COLORS.frame,
+    mutedInk: COLORS.mutedInk,
+    white: COLORS.white,
+    border: COLORS.border,
+    sidebarBg: COLORS.frame,
+  };
+  
   // ---------------- Auth ----------------
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => setUser(u));
@@ -307,26 +327,20 @@ const isGutenberg = (url) =>
       rendition.themes.default({
         body: {
           "font-family": '"Libre Baskerville", Georgia, serif !important',
-          color: COLORS.ink,
-          "background-color": COLORS.canvas,
+          color: `${darkMode ? "#e8e8f0" : COLORS.ink} !important`,
+          "background-color": `${darkMode ? "#1a1a2e" : COLORS.canvas} !important`,
           "line-height": "1.7",
         },
         p: {
           "font-family": '"Libre Baskerville", Georgia, serif !important',
           "line-height": "1.7",
+          color: `${darkMode ? "#e8e8f0" : COLORS.ink} !important`,
         },
-        h1: {
-          "font-family": '"Libre Baskerville", Georgia, serif !important',
-          color: COLORS.ink,
-        },
-        h2: {
-          "font-family": '"Libre Baskerville", Georgia, serif !important',
-          color: COLORS.ink,
-        },
-        h3: {
-          "font-family": '"Libre Baskerville", Georgia, serif !important',
-          color: COLORS.ink,
-        },
+        span: { color: `${darkMode ? "#e8e8f0" : COLORS.ink} !important` },
+        "*": { color: `${darkMode ? "#e8e8f0" : COLORS.ink} !important` },
+        h1: { color: `${darkMode ? "#e8e8f0" : COLORS.ink} !important` },
+        h2: { color: `${darkMode ? "#e8e8f0" : COLORS.ink} !important` },
+        h3: { color: `${darkMode ? "#e8e8f0" : COLORS.ink} !important` },
       });
 
       rendition.on("relocated", (location) => {
@@ -368,7 +382,7 @@ const isGutenberg = (url) =>
       destroyReader();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [epubFile, epubUrl]);
+  }, [epubFile, epubUrl, darkMode]);
 
   useEffect(() => {
     if (!renditionRef.current) return;
@@ -380,6 +394,30 @@ const isGutenberg = (url) =>
     renditionRef.current.spread(spread);
   }, [spread]);
 
+  useEffect(() => {
+    if (!renditionRef.current) return;
+    renditionRef.current.themes.default({
+      body: {
+        "background-color": `${darkMode ? "#1a1a2e" : COLORS.canvas} !important`,
+        color: `${darkMode ? "#e8e8f0" : COLORS.ink} !important`,
+        "line-height": "1.7",
+        "font-family": '"Libre Baskerville", Georgia, serif !important',
+      },
+      p: { color: `${darkMode ? "#e8e8f0" : COLORS.ink} !important` },
+      span: { color: `${darkMode ? "#e8e8f0" : COLORS.ink} !important` },
+      div: { color: `${darkMode ? "#e8e8f0" : COLORS.ink} !important` },
+      h1: { color: `${darkMode ? "#e8e8f0" : COLORS.ink} !important` },
+      h2: { color: `${darkMode ? "#e8e8f0" : COLORS.ink} !important` },
+      h3: { color: `${darkMode ? "#e8e8f0" : COLORS.ink} !important` },
+      h4: { color: `${darkMode ? "#e8e8f0" : COLORS.ink} !important` },
+      a: { color: `${darkMode ? "#7ec8e3" : COLORS.frame} !important` },
+      "*": { color: `${darkMode ? "#e8e8f0" : COLORS.ink} !important` },
+    });
+    const loc = renditionRef.current.currentLocation();
+    if (loc?.start?.cfi) {
+      renditionRef.current.display(loc.start.cfi);
+    }
+  }, [darkMode]);
   // ---------------- Controls ----------------
   const nextPage = async () => {
     try {
@@ -413,7 +451,7 @@ const isGutenberg = (url) =>
 
   // ---------------- UI ----------------
   return (
-    <div style={styles.page}>
+    <div style={{ ...styles.page, background: THEME.canvas, color: THEME.ink }}>
       <button
         onClick={() => navigate("/")}
         onMouseEnter={() => setHoverBookshelf(true)}
@@ -446,16 +484,42 @@ const isGutenberg = (url) =>
         My Bookshelf
       </button>
 
-      <h1 style={styles.title}>Reader</h1>
-      <p style={styles.subtitle}>
+      <button
+        onClick={() => setDarkMode(d => !d)}
+        style={{
+          position: "fixed",
+          top: 16,
+          right: 148,   // sits left of the My Bookshelf button
+          padding: "10px 14px",
+          borderRadius: 14,
+          border: "none",
+          background: darkMode ? COLORS.status : COLORS.ink,
+          color: darkMode ? COLORS.ink : COLORS.white,
+          cursor: "pointer",
+          zIndex: 9999,
+          fontWeight: 700,
+          fontFamily: FONTS.ui,
+          fontSize: 13,
+          boxShadow: "0 4px 14px rgba(18,38,48,0.08)",
+        }}
+      >
+        {darkMode ? "☀ Light" : "☾ Dark"}
+      </button>
+
+      <h1 style={{ ...styles.title, color: THEME.ink }}>Reader</h1>
+      <p style={{ ...styles.subtitle, color: THEME.mutedInk }}>
         {status}
         {remoteBook?.title ? ` — ${remoteBook.title}` : ""}
       </p>
 
       <div style={styles.grid}>
         {/* LEFT: Reader */}
-        <div style={styles.readerCard}>
-          <div style={styles.readerTopBar}>
+        <div style={{ 
+          ...styles.readerCard, 
+          background: THEME.white, 
+          border: `1px solid ${THEME.border}` 
+        }}>
+          <div style={{ ...styles.readerTopBar, background: THEME.canvas }}>
             <button 
               onClick={prevPage}
               onMouseEnter={() => setHoverPrev(true)}
@@ -497,7 +561,15 @@ const isGutenberg = (url) =>
               Save to Bookshelf
             </button>
 
-            <div style={{ ...styles.progress, display: "flex", flexDirection: "column", gap: 4, minWidth: 180 }}>
+            <div style={{ 
+              ...styles.progress, 
+              display: "flex", 
+              flexDirection: "column", 
+              gap: 4, 
+              minWidth: 180,
+              color: THEME.ink,
+              background: darkMode ? "rgba(255,255,255,0.08)" : "rgba(242,201,76,0.25)",
+            }}>
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
                 <span><b>Page</b> {currentPage}{totalPages > 0 ? ` / ${totalPages}` : ""}</span>
                 <span><b>{progress}%</b></span>
@@ -523,7 +595,7 @@ const isGutenberg = (url) =>
                 onClick={() => setFontSize(f => Math.max(60, f - 10))}
                 style={{ ...styles.btn, padding: "6px 10px", fontSize: 16 }}
               >A−</button>
-              <span style={{ fontSize: 12, color: COLORS.ink, fontFamily: FONTS.ui }}>{fontSize}%</span>
+              <span style={{ fontSize: 12, color: THEME.ink, fontFamily: FONTS.ui }}>{fontSize}%</span>
               <button
                 onClick={() => setFontSize(f => Math.min(200, f + 10))}
                 style={{ ...styles.btn, padding: "6px 10px", fontSize: 16 }}
@@ -558,7 +630,7 @@ const isGutenberg = (url) =>
             </div>
 
 
-            <label style={styles.fileLabel}>
+            <label style={{ ...styles.fileLabel, color: THEME.ink }}>
               <span>Text (EPUB)</span>
               <input
                 type="file"
@@ -568,7 +640,7 @@ const isGutenberg = (url) =>
             </label>
           </div>
 
-          <div ref={viewerRef} style={styles.viewer} />
+          <div ref={viewerRef} style={{ ...styles.viewer, background: THEME.canvas, borderLeft: `6px solid ${THEME.frame}` }} />
         </div>
 
         {/* RIGHT: Sidebar */}

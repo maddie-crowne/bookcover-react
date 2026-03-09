@@ -27,6 +27,7 @@ const FONTS = {
   //reading: '"Libre Baskerville", Georgia, serif',
 };
 
+
 const GRID_CONFIGS = {
   small: { width: 110, height: 165, gap: 16, fontSize: 11, lineClamp: 2 },
   medium: { width: 160, height: 240, gap: 24, fontSize: 14, lineClamp: 3 },
@@ -57,7 +58,24 @@ export default function Dashboard({ user }) {
   const [isSearchHovered, setIsSearchHovered] = useState(false);
   const [isLogoutHovered, setIsLogoutHovered] = useState(false);
 
-  
+  // dark mode
+  const [darkMode, setDarkMode] = useState(false);
+  const THEME = darkMode ? {
+    canvas: "#1a1a2e",
+    ink: "#e8e8f0",
+    frame: "#4a9eba",
+    mutedInk: "rgba(232,232,240,0.65)",
+    white: "#16213e",
+    border: "rgba(232,232,240,0.12)",
+  } : {
+    canvas: COLORS.canvas,
+    ink: COLORS.ink,
+    frame: COLORS.frame,
+    mutedInk: COLORS.mutedInk,
+    white: COLORS.white,
+    border: COLORS.border,
+  };
+
   // search state
   const [q, setQ] = useState("");
   const [searchStatus, setSearchStatus] = useState("");
@@ -342,9 +360,9 @@ export default function Dashboard({ user }) {
   return (
     <div
       style={{
-        background: COLORS.canvas,
+        background: THEME.canvas,
         minHeight: "100vh",
-        color: COLORS.ink,
+        color: THEME.ink,
         fontFamily: FONTS.ui,
       }}
     >
@@ -359,10 +377,10 @@ export default function Dashboard({ user }) {
           }}
         >
           <div>
-            <h1 style={{ margin: 0, fontSize: 22, color: COLORS.ink, fontFamily: FONTS.ui }}>
+            <h1 style={{ margin: 0, fontSize: 22, color: THEME.ink, fontFamily: FONTS.ui }}>
               Bookcover
             </h1>
-            <p style={{ margin: "4px 0 0", color: COLORS.mutedInk, fontSize: 13, fontFamily: FONTS.ui }}>
+            <p style={{ margin: "4px 0 0", color: THEME.mutedInk, fontSize: 13, fontFamily: FONTS.ui }}>
               Your personal bookshelf
             </p>
           </div>
@@ -371,7 +389,7 @@ export default function Dashboard({ user }) {
               display: "flex",
               alignItems: "center",
               gap: 10,
-              background: COLORS.white,
+              background: THEME.white,
               border: `1px solid ${COLORS.border}`,
               borderRadius: 14,
               padding: "10px 12px",
@@ -382,7 +400,7 @@ export default function Dashboard({ user }) {
             <span
               style={{
                 fontSize: 12,
-                color: COLORS.mutedInk,
+                color: THEME.mutedInk,
                 maxWidth: 280,
                 overflow: "hidden",
                 textOverflow: "ellipsis",
@@ -431,18 +449,35 @@ export default function Dashboard({ user }) {
             >
               Logout
             </button>
+
+            <button
+              onClick={() => setDarkMode(d => !d)}
+              style={{
+                background: darkMode ? COLORS.status : COLORS.ink,
+                color: darkMode ? COLORS.ink : COLORS.white,
+                border: "none",
+                borderRadius: 12,
+                padding: "10px 14px",
+                cursor: "pointer",
+                fontFamily: FONTS.ui,
+                fontWeight: 600,
+                fontSize: 13,
+              }}
+            >
+              {darkMode ? "☀ Light" : "☾ Dark"}
+            </button>
           </div>
         </div>
         
         <div style={{ margin: "18px 0 12px", display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}> 
-          <h2 style={{ margin: 0, fontSize: 18, color: COLORS.ink, fontFamily: FONTS.headings }}>
+          <h2 style={{ margin: 0, fontSize: 18, color: THEME.ink, fontFamily: FONTS.headings }}>
             My Bookshelf
           </h2>
           <p style={{ margin: "6px 0 0", color: COLORS.mutedInk, fontSize: 13, fontFamily: FONTS.ui }}>
           </p>
         </div>
 
-        <div style={{ display: "flex", gap: 6, background: "rgba(18, 38, 48, 0.05)", padding: 4, borderRadius: 10 }}>
+        <div style={{ display: "flex", gap: 6, background: darkMode ? "rgba(255,255,255,0.05)" : "rgba(18, 38, 48, 0.05)", padding: 4, borderRadius: 10 }}>
           {["small", "medium", "large"].map((size) => (
             <button
               key={size}
@@ -453,8 +488,8 @@ export default function Dashboard({ user }) {
                 borderRadius: 7,
                 cursor: "pointer",
                 border: "none",
-                background: gridSize === size ? COLORS.white : "transparent",
-                color: COLORS.ink,
+                background: gridSize === size ? THEME.white : "transparent",
+                color: THEME.ink,
                 fontWeight: gridSize === size ? "700" : "400",
                 boxShadow: gridSize === size ? "0 2px 5px rgba(0,0,0,0.1)" : "none",
                 transition: "all 0.2s ease",
@@ -475,8 +510,8 @@ export default function Dashboard({ user }) {
               padding: "6px 10px",
               borderRadius: 8,
               border: `1px solid ${COLORS.border}`,
-              background: COLORS.white,
-              color: COLORS.ink,
+              background: THEME.white,
+              color: THEME.ink,
               fontFamily: FONTS.ui,
               fontSize: 13,
               cursor: "pointer",
@@ -514,6 +549,7 @@ export default function Dashboard({ user }) {
               book={b}
               onEdit={openEditModal}
               onDelete={deleteBook}
+              darkMode={darkMode}
             />
           ))}
         </div>
@@ -823,9 +859,11 @@ function AddTile({ onClick, size }) {
   );
 }
 
-function BookTile({ book, onEdit, onDelete, size }) {
+function BookTile({ book, onEdit, onDelete, size , darkMode}) {
   const navigate = useNavigate();
   const config = GRID_CONFIGS[size] || GRID_CONFIGS["medium"];
+  const inkColor = darkMode ? "#e8e8f0" : COLORS.ink;
+  const mutedColor = darkMode ? "rgba(232,232,240,0.65)" : "#6b7280";
 
   const hasEpub = !!book.epub_link || !!book.epub_storage_path;
   const hasAudio = !!book.audio_link || !!book.audio_storage_path;
@@ -1047,7 +1085,7 @@ function BookTile({ book, onEdit, onDelete, size }) {
             fontSize: config.fontSize, //14,
             fontWeight: 800,
             lineHeight: 1.2,
-            color: COLORS.ink,
+            color: inkColor, //COLORS.ink,
             fontFamily: FONTS.headings,
             marginBottom: 4,
             display: "-webkit-box",
@@ -1064,7 +1102,7 @@ function BookTile({ book, onEdit, onDelete, size }) {
         <div
           style={{
             fontSize: config.fontSize - 2, //12,
-            color: "#6b7280",
+            color: mutedColor, //"#6b7280",
             lineHeight: 1.3,
           }}
         >
