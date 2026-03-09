@@ -27,6 +27,12 @@ const FONTS = {
   //reading: '"Libre Baskerville", Georgia, serif',
 };
 
+const GRID_CONFIGS = {
+  small: { width: 110, height: 165, gap: 16, fontSize: 11, lineClamp: 2 },
+  medium: { width: 160, height: 240, gap: 24, fontSize: 14, lineClamp: 3 },
+  large: { width: 210, height: 315, gap: 32, fontSize: 18, lineClamp: 3 },
+};
+
 const generateBookId = (title) =>
   title.toLowerCase().trim().replace(/[^a-z0-9]/g, "-");
 
@@ -34,6 +40,8 @@ const coverFromGutendex = (formats) => formats?.["image/jpeg"] || "";
 const epubFromGutendex = (formats) => formats?.["application/epub+zip"] || "";
 
 export default function Dashboard({ user }) {
+  const [gridSize, setGridSize] = useState("medium"); 
+  const [sortBy, setSortBy] = useState("recent");
   const [books, setBooks] = useState([]);
   const [modalOpen, setModalOpen] = useState(false);
   const [tab, setTab] = useState("upload"); // upload/search
@@ -65,7 +73,17 @@ export default function Dashboard({ user }) {
   const [editStatus, setEditStatus] = useState("");
 
   const booksCol = useMemo(() => collection(db, "Users", user.uid, "Books"), [user.uid]);
-
+  const sortedBooks = useMemo(() => {
+    const list = [...books];
+    if (sortBy === "title-asc") list.sort((a, b) => (a.title || "").localeCompare(b.title || ""));
+    if (sortBy === "title-desc") list.sort((a, b) => (b.title || "").localeCompare(a.title || ""));
+    if (sortBy === "author-asc") list.sort((a, b) => (a.author || "").localeCompare(b.author || ""));
+    if (sortBy === "author-desc") list.sort((a, b) => (b.author || "").localeCompare(a.author || ""));
+    if (sortBy === "recent") list.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+    if (sortBy === "epub") return list.filter(b => !!b.epub_link || !!b.epub_storage_path);
+    if (sortBy === "audio") return list.filter(b => !!b.audio_link || !!b.audio_storage_path);
+    return list;
+  }, [books, sortBy]);
   const loadBooks = async () => {
     const snap = await getDocs(booksCol);
     const list = [];
@@ -415,8 +433,8 @@ export default function Dashboard({ user }) {
             </button>
           </div>
         </div>
-
-        <div style={{ margin: "18px 0 12px" }}>
+        
+        <div style={{ margin: "18px 0 12px", display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}> 
           <h2 style={{ margin: 0, fontSize: 18, color: COLORS.ink, fontFamily: FONTS.headings }}>
             My Bookshelf
           </h2>
@@ -424,17 +442,75 @@ export default function Dashboard({ user }) {
           </p>
         </div>
 
-        <div style={gridStyle}>
+        <div style={{ display: "flex", gap: 6, background: "rgba(18, 38, 48, 0.05)", padding: 4, borderRadius: 10 }}>
+          {["small", "medium", "large"].map((size) => (
+            <button
+              key={size}
+              onClick={() => setGridSize(size)}
+              style={{
+                padding: "4px 10px",
+                fontSize: 11,
+                borderRadius: 7,
+                cursor: "pointer",
+                border: "none",
+                background: gridSize === size ? COLORS.white : "transparent",
+                color: COLORS.ink,
+                fontWeight: gridSize === size ? "700" : "400",
+                boxShadow: gridSize === size ? "0 2px 5px rgba(0,0,0,0.1)" : "none",
+                transition: "all 0.2s ease",
+                fontFamily: FONTS.ui,
+              }}
+            >
+              {size.toUpperCase()}
+            </button>
+          ))}
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "12px 0" }}>
+          <span style={{ fontSize: 13, color: COLORS.mutedInk, fontFamily: FONTS.ui }}>Sort by:</span>
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value)}
+            style={{
+              padding: "6px 10px",
+              borderRadius: 8,
+              border: `1px solid ${COLORS.border}`,
+              background: COLORS.white,
+              color: COLORS.ink,
+              fontFamily: FONTS.ui,
+              fontSize: 13,
+              cursor: "pointer",
+              outline: "none",
+            }}
+          >
+            <option value="recent">Recently Added</option>
+            <option value="title-asc">Title (A → Z)</option>
+            <option value="title-desc">Title (Z → A)</option>
+            <option value="author-asc">Author (A → Z)</option>
+            <option value="author-desc">Author (Z → A)</option>
+            <option value="epub">EPUB only</option>
+            <option value="audio">Audio only</option>
+          </select>
+        </div>
+
+        <div style={{ 
+          display: "grid", 
+          gridTemplateColumns: `repeat(auto-fill, ${GRID_CONFIGS[gridSize].width}px)`, 
+          gap: GRID_CONFIGS[gridSize].gap,
+          justifyContent: "center" 
+        }}>
           <AddTile
+            size={gridSize}
             onClick={() => {
               setTab("upload");
               setModalOpen(true);
             }}
           />
 
-          {books.map((b) => (
+          {sortedBooks.map((b) => (
             <BookTile
               key={b.id}
+              size={gridSize}
               book={b}
               onEdit={openEditModal}
               onDelete={deleteBook}
@@ -653,8 +729,10 @@ export default function Dashboard({ user }) {
   );
 }
 
-function AddTile({ onClick }) {
+function AddTile({ onClick, size }) {
   const [isHovered, setIsHovered] = useState(false);
+  const config = GRID_CONFIGS[size];
+
   return (
     <div
       onClick={onClick}
@@ -669,8 +747,8 @@ function AddTile({ onClick }) {
         display: "flex",
         flexDirection: "column",
         gap: 10,
-        width: "160px",
-        height: "335px",
+        width: config.width, //"160px",
+        //height: "335px",
         cursor: "pointer",
         transition: "transform 0.3s ease", 
         transform: isHovered ? "translateY(-4px)" : "translateY(0)",
@@ -680,9 +758,9 @@ function AddTile({ onClick }) {
       }}
     >
       <div style={{
-        width: "160px",
-        height: "240px",
-        aspectRatio: "2 / 3",
+        width: config.width, //"160px",
+        height: config.height, //"240px",
+        //aspectRatio: "2 / 3",
         background: "rgba(255,255,255,0.28)",
         border: isHovered ? `2px solid ${COLORS.frame}` : `2px dashed ${COLORS.border}`, //border: `2px dashed ${COLORS.border}`, //"2px dashed rgba(26,75,93,0.2)",
         borderRadius: 8, 
@@ -691,19 +769,19 @@ function AddTile({ onClick }) {
         justifyContent: "center",
         transition: "all 0.3s ease, box-shadow 0.3s ease",
         boxShadow: isHovered ? `0 20px 40px rgba(26, 75, 93, 0.12)` : "none",
-        position: "relative",
+        //position: "relative",
       }}> 
           <div
             style={{
-              width: 58, 
-              height: 58, 
+              width: size === "small" ? 40 : 58, //58, 
+              height: size === "small" ? 40 : 58, //58, 
               borderRadius: "50%", //999,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              lineHeight: "58px",
+              //lineHeight: "58px",
               //lineHeight: 1,
-              fontSize: 34,
+              fontSize: size === "small" ? 24 : 34, //34,
               // dynamic colors
               background: isHovered ? COLORS.frame : "rgba(18, 38, 48, 0.05)",
               border: `2px solid ${isHovered ? COLORS.frame : COLORS.ink}`,
@@ -724,25 +802,30 @@ function AddTile({ onClick }) {
           </div>
         </div>
 
-        <div style={{ height: "85px", textAlign: "left" }}>
+        <div style={{ 
+          //height: "85px", 
+          textAlign: "left", 
+        }}>
         <b style={{ 
-          fontSize: 14, 
+          fontSize: config.fontSize, // 14, 
           fontFamily: FONTS.ui, 
           transition: "color 0.3s ease",
           color: isHovered ? COLORS.frame : COLORS.ink }}>
             Add new book
         </b>
-        <br />
-        <span style={{ fontSize: 12, color: COLORS.mutedInk, fontFamily: FONTS.ui }}>
-          Upload or search
-        </span>
+        {size !== "small" && (
+          <div style={{ fontSize: 12, color: COLORS.mutedInk, fontFamily: FONTS.ui }}>
+            Upload or search
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
-function BookTile({ book, onEdit, onDelete }) {
+function BookTile({ book, onEdit, onDelete, size }) {
   const navigate = useNavigate();
+  const config = GRID_CONFIGS[size] || GRID_CONFIGS["medium"];
 
   const hasEpub = !!book.epub_link || !!book.epub_storage_path;
   const hasAudio = !!book.audio_link || !!book.audio_storage_path;
@@ -797,8 +880,10 @@ function BookTile({ book, onEdit, onDelete }) {
       <div
         style={{
           position: "relative",
-          width: "160px", //"100%",
-          aspectRatio: "2 / 3",
+          //width: "160px", //"100%",
+          //aspectRatio: "2 / 3",
+          width: config.width,
+          height: config.height,
           borderRadius: "2px 8px 8px 2px", //14,
           overflow: "hidden",
           boxShadow: "6px 8px 15px rgba(0,0,0,0.3), -1px 0 2px rgba(0,0,0,0.1)", //"0 10px 24px rgba(0,0,0,0.18)",
@@ -843,7 +928,7 @@ function BookTile({ book, onEdit, onDelete }) {
             fontWeight: 800,
             letterSpacing: "0.02em",
             background: "rgba(255,255,255,0.82)",
-            color: "COLORS.ink",
+            color: COLORS.ink,
             padding: "5px 8px",
             borderRadius: 999,
             border: "1px solid rgba(17,24,39,0.08)",
@@ -950,8 +1035,8 @@ function BookTile({ book, onEdit, onDelete }) {
 
       <div style={{ 
         //minHeight: 44 
-        width: "160px", 
-        height: "85px", 
+        width: config.width, //"160px", 
+        //height: "85px", 
         marginTop: "10px",
         display: "flex",
         flexDirection: "column",
@@ -959,10 +1044,10 @@ function BookTile({ book, onEdit, onDelete }) {
       }}>
         <div
           style={{
-            fontSize: 14,
+            fontSize: config.fontSize, //14,
             fontWeight: 800,
             lineHeight: 1.2,
-            color: "COLORS.ink",
+            color: COLORS.ink,
             fontFamily: FONTS.headings,
             marginBottom: 4,
             display: "-webkit-box",
@@ -970,6 +1055,7 @@ function BookTile({ book, onEdit, onDelete }) {
             WebkitBoxOrient: "vertical",
             overflow: "hidden",
             //height: "54px",
+            WebkitLineClamp: config.lineClamp,
           }}
         >
           {book.title || "(Untitled)"}
@@ -977,7 +1063,7 @@ function BookTile({ book, onEdit, onDelete }) {
 
         <div
           style={{
-            fontSize: 12,
+            fontSize: config.fontSize - 2, //12,
             color: "#6b7280",
             lineHeight: 1.3,
           }}
@@ -1074,11 +1160,11 @@ function SearchResultCard({ book, onAddEpub, onFindAudio, onAddAudio, onAddBoth 
             {hasEpub ? "Add EPUB" : "No EPUB"}
           </button>
 
-          <button onClick={findAudioClick} style={miniBtn("#f59e0b", "COLORS.ink")}>
+          <button onClick={findAudioClick} style={miniBtn("#f59e0b", COLORS.ink)}>
             Find audio
           </button>
 
-          <button onClick={addBothClick} style={miniBtn("COLORS.ink", "white")}>
+          <button onClick={addBothClick} style={miniBtn(COLORS.ink, "white")}>
             Add both
           </button>
 
