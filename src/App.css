@@ -40,3 +40,22 @@
 .read-the-docs {
   color: #888;
 }
+
+.book-cover-img {
+  width: 160px;       /* Keep width consistent */
+  height: 240px;      /* Force a standard book aspect ratio */
+  object-fit: cover;  /* Prevents the image from stretching */
+  border-radius: 2px 5px 5px 2px;
+  
+  /* Creates a realistic book shadow */
+  box-shadow: 
+    5px 5px 15px rgba(0, 0, 0, 0.3), 
+    -2px 0 5px rgba(0, 0, 0, 0.1); /* Slight shadow on the spine side */
+}
+
+/* Optional: Add a lift effect on hover */
+.book-container:hover .book-cover-img {
+  transform: translateY(-5px);
+  transition: transform 0.2s ease;
+  box-shadow: 5px 10px 20px rgba(0, 0, 0, 0.4);
+}

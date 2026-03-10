@@ -20,8 +20,18 @@ const COLORS = {
 };
 
 const FONTS = {
-  ui: '"Inter", "Helvetica Neue", Arial, sans-serif',
-  reading: '"Libre Baskerville", Georgia, serif',
+  headings: '"Merriweather", serif',
+  ui: '"Inter", sans-serif',
+  reading: '"Source Serif 4", serif',
+  //ui: '"Inter", "Helvetica Neue", Arial, sans-serif',
+  //reading: '"Libre Baskerville", Georgia, serif',
+};
+
+
+const GRID_CONFIGS = {
+  small: { width: 110, height: 165, gap: 16, fontSize: 11, lineClamp: 2 },
+  medium: { width: 160, height: 240, gap: 24, fontSize: 14, lineClamp: 3 },
+  large: { width: 210, height: 315, gap: 32, fontSize: 18, lineClamp: 3 },
 };
 
 const generateBookId = (title) =>
@@ -31,6 +41,8 @@ const coverFromGutendex = (formats) => formats?.["image/jpeg"] || "";
 const epubFromGutendex = (formats) => formats?.["application/epub+zip"] || "";
 
 export default function Dashboard({ user }) {
+  const [gridSize, setGridSize] = useState("medium"); 
+  const [sortBy, setSortBy] = useState("recent");
   const [books, setBooks] = useState([]);
   const [modalOpen, setModalOpen] = useState(false);
   const [tab, setTab] = useState("upload"); // upload/search
@@ -41,6 +53,28 @@ export default function Dashboard({ user }) {
   const [upAuthor, setUpAuthor] = useState("");
   const [upFile, setUpFile] = useState(null);
   const [upStatus, setUpStatus] = useState("");
+  
+  const [isUploadHovered, setIsUploadHovered] = useState(false);
+  const [isSearchHovered, setIsSearchHovered] = useState(false);
+  const [isLogoutHovered, setIsLogoutHovered] = useState(false);
+
+  // dark mode
+  const [darkMode, setDarkMode] = useState(false);
+  const THEME = darkMode ? {
+    canvas: "#1a1a2e",
+    ink: "#e8e8f0",
+    frame: "#4a9eba",
+    mutedInk: "rgba(232,232,240,0.65)",
+    white: "#16213e",
+    border: "rgba(232,232,240,0.12)",
+  } : {
+    canvas: COLORS.canvas,
+    ink: COLORS.ink,
+    frame: COLORS.frame,
+    mutedInk: COLORS.mutedInk,
+    white: COLORS.white,
+    border: COLORS.border,
+  };
 
   // search state
   const [q, setQ] = useState("");
@@ -57,7 +91,17 @@ export default function Dashboard({ user }) {
   const [editStatus, setEditStatus] = useState("");
 
   const booksCol = useMemo(() => collection(db, "Users", user.uid, "Books"), [user.uid]);
-
+  const sortedBooks = useMemo(() => {
+    const list = [...books];
+    if (sortBy === "title-asc") list.sort((a, b) => (a.title || "").localeCompare(b.title || ""));
+    if (sortBy === "title-desc") list.sort((a, b) => (b.title || "").localeCompare(a.title || ""));
+    if (sortBy === "author-asc") list.sort((a, b) => (a.author || "").localeCompare(b.author || ""));
+    if (sortBy === "author-desc") list.sort((a, b) => (b.author || "").localeCompare(a.author || ""));
+    if (sortBy === "recent") list.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+    if (sortBy === "epub") return list.filter(b => !!b.epub_link || !!b.epub_storage_path);
+    if (sortBy === "audio") return list.filter(b => !!b.audio_link || !!b.audio_storage_path);
+    return list;
+  }, [books, sortBy]);
   const loadBooks = async () => {
     const snap = await getDocs(booksCol);
     const list = [];
@@ -316,9 +360,9 @@ export default function Dashboard({ user }) {
   return (
     <div
       style={{
-        background: COLORS.canvas,
+        background: THEME.canvas,
         minHeight: "100vh",
-        color: COLORS.ink,
+        color: THEME.ink,
         fontFamily: FONTS.ui,
       }}
     >
@@ -333,10 +377,10 @@ export default function Dashboard({ user }) {
           }}
         >
           <div>
-            <h1 style={{ margin: 0, fontSize: 22, color: COLORS.ink, fontFamily: FONTS.ui }}>
+            <h1 style={{ margin: 0, fontSize: 22, color: THEME.ink, fontFamily: FONTS.ui }}>
               Bookcover
             </h1>
-            <p style={{ margin: "4px 0 0", color: COLORS.mutedInk, fontSize: 13, fontFamily: FONTS.ui }}>
+            <p style={{ margin: "4px 0 0", color: THEME.mutedInk, fontSize: 13, fontFamily: FONTS.ui }}>
               Your personal bookshelf
             </p>
           </div>
@@ -345,7 +389,7 @@ export default function Dashboard({ user }) {
               display: "flex",
               alignItems: "center",
               gap: 10,
-              background: COLORS.white,
+              background: THEME.white,
               border: `1px solid ${COLORS.border}`,
               borderRadius: 14,
               padding: "10px 12px",
@@ -356,7 +400,7 @@ export default function Dashboard({ user }) {
             <span
               style={{
                 fontSize: 12,
-                color: COLORS.mutedInk,
+                color: THEME.mutedInk,
                 maxWidth: 280,
                 overflow: "hidden",
                 textOverflow: "ellipsis",
@@ -368,45 +412,144 @@ export default function Dashboard({ user }) {
             </span>
             <button
               onClick={logout}
+              onMouseEnter={() => setIsLogoutHovered(true)}
+              onMouseLeave={() => setIsLogoutHovered(false)}
               style={{
-                display: "flex",
+                background: COLORS.frame, // Midnight Navy default
+                color: COLORS.white,
+
+                fontFamily: FONTS.ui,
+                //fontSize: 14,
+                fontWeight: 500,
+                
+                // Shape & Spacing
+                border: "none",
+                borderRadius: 12,
+                padding: "10px 18px",
+                cursor: "pointer",
+
+                /*display: "flex",
                 alignItems: "center",
                 gap: 10,
                 background: COLORS.white,
                 border: `1px solid ${COLORS.border}`,
                 borderRadius: 14,
-                padding: "10px 12px",
-                boxShadow: "0 4px 14px rgba(18,38,48,0.08)",
-                fontFamily: FONTS.ui,
+                padding: "10px 12px",*/
+                
+                // Interaction & Animation
+                transition: "all 0.3s ease",
+                transform: isLogoutHovered ? "translateY(-3px)" : "translateY(0)",
+                
+                // Blue Shadow Highlight
+                boxShadow: isLogoutHovered 
+                  ? "0 8px 20px rgba(26, 75, 93, 0.4)" // Navy highlight
+                  : "0 2px 8px rgba(18, 38, 48, 0.08)",
+                
               }}
             >
               Logout
             </button>
+
+            <button
+              onClick={() => setDarkMode(d => !d)}
+              style={{
+                background: darkMode ? COLORS.status : COLORS.ink,
+                color: darkMode ? COLORS.ink : COLORS.white,
+                border: "none",
+                borderRadius: 12,
+                padding: "10px 14px",
+                cursor: "pointer",
+                fontFamily: FONTS.ui,
+                fontWeight: 600,
+                fontSize: 13,
+              }}
+            >
+              {darkMode ? "☀ Light" : "☾ Dark"}
+            </button>
           </div>
         </div>
-
-        <div style={{ margin: "18px 0 12px" }}>
-          <h2 style={{ margin: 0, fontSize: 18, color: COLORS.ink, fontFamily: FONTS.ui }}>
+        
+        <div style={{ margin: "18px 0 12px", display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}> 
+          <h2 style={{ margin: 0, fontSize: 18, color: THEME.ink, fontFamily: FONTS.headings }}>
             My Bookshelf
           </h2>
           <p style={{ margin: "6px 0 0", color: COLORS.mutedInk, fontSize: 13, fontFamily: FONTS.ui }}>
           </p>
         </div>
 
-        <div style={gridStyle}>
+        <div style={{ display: "flex", gap: 6, background: darkMode ? "rgba(255,255,255,0.05)" : "rgba(18, 38, 48, 0.05)", padding: 4, borderRadius: 10 }}>
+          {["small", "medium", "large"].map((size) => (
+            <button
+              key={size}
+              onClick={() => setGridSize(size)}
+              style={{
+                padding: "4px 10px",
+                fontSize: 11,
+                borderRadius: 7,
+                cursor: "pointer",
+                border: "none",
+                background: gridSize === size ? THEME.white : "transparent",
+                color: THEME.ink,
+                fontWeight: gridSize === size ? "700" : "400",
+                boxShadow: gridSize === size ? "0 2px 5px rgba(0,0,0,0.1)" : "none",
+                transition: "all 0.2s ease",
+                fontFamily: FONTS.ui,
+              }}
+            >
+              {size.toUpperCase()}
+            </button>
+          ))}
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "12px 0" }}>
+          <span style={{ fontSize: 13, color: COLORS.mutedInk, fontFamily: FONTS.ui }}>Sort by:</span>
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value)}
+            style={{
+              padding: "6px 10px",
+              borderRadius: 8,
+              border: `1px solid ${COLORS.border}`,
+              background: THEME.white,
+              color: THEME.ink,
+              fontFamily: FONTS.ui,
+              fontSize: 13,
+              cursor: "pointer",
+              outline: "none",
+            }}
+          >
+            <option value="recent">Recently Added</option>
+            <option value="title-asc">Title (A → Z)</option>
+            <option value="title-desc">Title (Z → A)</option>
+            <option value="author-asc">Author (A → Z)</option>
+            <option value="author-desc">Author (Z → A)</option>
+            <option value="epub">EPUB only</option>
+            <option value="audio">Audio only</option>
+          </select>
+        </div>
+
+        <div style={{ 
+          display: "grid", 
+          gridTemplateColumns: `repeat(auto-fill, ${GRID_CONFIGS[gridSize].width}px)`, 
+          gap: GRID_CONFIGS[gridSize].gap,
+          justifyContent: "center" 
+        }}>
           <AddTile
+            size={gridSize}
             onClick={() => {
               setTab("upload");
               setModalOpen(true);
             }}
           />
 
-          {books.map((b) => (
+          {sortedBooks.map((b) => (
             <BookTile
               key={b.id}
+              size={gridSize}
               book={b}
               onEdit={openEditModal}
               onDelete={deleteBook}
+              darkMode={darkMode}
             />
           ))}
         </div>
@@ -459,7 +602,24 @@ export default function Dashboard({ user }) {
                 />
               </Field>
 
-              <button onClick={uploadManualFiles} style={{ ...btnWide, background: COLORS.spark }}>
+              <button 
+                onClick={uploadManualFiles} 
+                onMouseEnter={() => setIsUploadHovered(true)}
+                onMouseLeave={() => setIsUploadHovered(false)}
+                style={{ 
+                  ...btnWide, 
+                  background: COLORS.frame, 
+                  cursor: "pointer",
+                  border: "none",
+                  color: "#FFFFFF",
+                  // --- HOVER LOGIC ---
+                  transition: "all 0.3s ease",
+                  transform: isUploadHovered ? "translateY(-4px)" : "translateY(0)",
+                  boxShadow: isUploadHovered 
+                    ? `0 10px 25px rgba(26, 75, 93, 0.35)` // Crimson Shadow
+                    : "none",
+                  }}
+              >
                 Upload EPUB / Audiobook
               </button>
               {upStatus && (
@@ -487,7 +647,24 @@ export default function Dashboard({ user }) {
                   placeholder="Search by title, author…"
                 />
               </Field>
-              <button onClick={searchGutenberg} style={{ ...btnWide, background: COLORS.frame }}>
+              <button 
+                onClick={searchGutenberg} 
+                onMouseEnter={() => setIsSearchHovered(true)}
+                onMouseLeave={() => setIsSearchHovered(false)}
+                style={{ 
+                  ...btnWide,
+                  background: COLORS.frame,
+                  cursor: "pointer",
+                  border: "none",
+                  color: "#FFFFFF",
+                  // --- HOVER LOGIC ---
+                  transition: "all 0.3s ease",
+                  transform: isSearchHovered ? "translateY(-4px)" : "translateY(0)",
+                  boxShadow: isSearchHovered 
+                    ? `0 10px 25px rgba(26, 75, 93, 0.35)` // Navy Shadow
+                    : "none", 
+                }}
+              >
                 Search
               </button>
               {searchStatus && (
@@ -588,54 +765,105 @@ export default function Dashboard({ user }) {
   );
 }
 
-function AddTile({ onClick }) {
+function AddTile({ onClick, size }) {
+  const [isHovered, setIsHovered] = useState(false);
+  const config = GRID_CONFIGS[size];
+
   return (
     <div
       onClick={onClick}
+      onMouseEnter={() => setIsHovered(true)}  
+      onMouseLeave={() => setIsHovered(false)}
       style={{
-        background: "rgba(255,255,255,0.28)",
-        border: "2px dashed rgba(26,75,93,0.16)",
-        borderRadius: 16,
-        boxShadow: "0 2px 10px rgba(18,38,48,0.04)",
-        minHeight: 210,
+        //background: "rgba(255,255,255,0.28)",
+        //border: "2px dashed rgba(26,75,93,0.16)",
+        //borderRadius: 16,
+        //boxShadow: "0 2px 10px rgba(18,38,48,0.04)",
+        //minHeight: 210,
+        display: "flex",
+        flexDirection: "column",
+        gap: 10,
+        width: config.width, //"160px",
+        //height: "335px",
         cursor: "pointer",
+        transition: "transform 0.3s ease", 
+        transform: isHovered ? "translateY(-4px)" : "translateY(0)",
+        //alignItems: "center",
+        //justifyContent: "center",
+        //textAlign: "center",
+      }}
+    >
+      <div style={{
+        width: config.width, //"160px",
+        height: config.height, //"240px",
+        //aspectRatio: "2 / 3",
+        background: "rgba(255,255,255,0.28)",
+        border: isHovered ? `2px solid ${COLORS.frame}` : `2px dashed ${COLORS.border}`, //border: `2px dashed ${COLORS.border}`, //"2px dashed rgba(26,75,93,0.2)",
+        borderRadius: 8, 
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        textAlign: "center",
-      }}
-    >
-      <div style={{ padding: 18 }}>
-        <div
-          style={{
-            width: 58,
-            height: 58,
-            borderRadius: 999,
-            background: "rgba(230,126,126,0.10)",
-            border: "1px solid rgba(230,126,126,0.28)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontSize: 34,
-            color: COLORS.frame,
-            margin: "0 auto 12px",
-            fontFamily: FONTS.ui,
-          }}
-        >
-          +
+        transition: "all 0.3s ease, box-shadow 0.3s ease",
+        boxShadow: isHovered ? `0 20px 40px rgba(26, 75, 93, 0.12)` : "none",
+        //position: "relative",
+      }}> 
+          <div
+            style={{
+              width: size === "small" ? 40 : 58, //58, 
+              height: size === "small" ? 40 : 58, //58, 
+              borderRadius: "50%", //999,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              //lineHeight: "58px",
+              //lineHeight: 1,
+              fontSize: size === "small" ? 24 : 34, //34,
+              // dynamic colors
+              background: isHovered ? COLORS.frame : "rgba(18, 38, 48, 0.05)",
+              border: `2px solid ${isHovered ? COLORS.frame : COLORS.ink}`,
+              color: isHovered ? "#FFFFFF" : COLORS.ink, 
+              
+              // THE ANIMATION:
+              transition: "all 0.3s ease",
+              
+              
+              /*margin: "0",
+              background: "rgba(230,126,126,0.10)",
+              border: "1px solid rgba(230,126,126,0.28)",
+              color: COLORS.frame,*/
+              //fontFamily: FONTS.ui,
+            }}
+          >
+            <span style={{ marginTop: "-4px" }}>+</span>
+          </div>
         </div>
-        <b style={{ fontSize: 14, color: COLORS.ink, fontFamily: FONTS.ui }}>Add new book</b>
-        <br />
-        <span style={{ fontSize: 12, color: COLORS.mutedInk, fontFamily: FONTS.ui }}>
-          Upload or search
-        </span>
+
+        <div style={{ 
+          //height: "85px", 
+          textAlign: "left", 
+        }}>
+        <b style={{ 
+          fontSize: config.fontSize, // 14, 
+          fontFamily: FONTS.ui, 
+          transition: "color 0.3s ease",
+          color: isHovered ? COLORS.frame : COLORS.ink }}>
+            Add new book
+        </b>
+        {size !== "small" && (
+          <div style={{ fontSize: 12, color: COLORS.mutedInk, fontFamily: FONTS.ui }}>
+            Upload or search
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
-function BookTile({ book, onEdit, onDelete }) {
+function BookTile({ book, onEdit, onDelete, size , darkMode}) {
   const navigate = useNavigate();
+  const config = GRID_CONFIGS[size] || GRID_CONFIGS["medium"];
+  const inkColor = darkMode ? "#e8e8f0" : COLORS.ink;
+  const mutedColor = darkMode ? "rgba(232,232,240,0.65)" : "#6b7280";
 
   const hasEpub = !!book.epub_link || !!book.epub_storage_path;
   const hasAudio = !!book.audio_link || !!book.audio_storage_path;
@@ -644,7 +872,7 @@ function BookTile({ book, onEdit, onDelete }) {
 
   const actionButtonStyle = {
     border: "1px solid rgba(255,255,255,0.18)",
-    background: "rgba(17,24,39,0.72)",
+    background: COLORS.ink,
     color: "#fff",
     padding: "7px 10px",
     borderRadius: 8,
@@ -652,6 +880,7 @@ function BookTile({ book, onEdit, onDelete }) {
     cursor: "pointer",
     fontSize: 11,
     backdropFilter: "blur(4px)",
+    transition: "all 0.2s ease",
   };
 
   const deleteButtonStyle = {
@@ -689,14 +918,18 @@ function BookTile({ book, onEdit, onDelete }) {
       <div
         style={{
           position: "relative",
-          width: "100%",
-          aspectRatio: "2 / 3",
-          borderRadius: 14,
+          //width: "160px", //"100%",
+          //aspectRatio: "2 / 3",
+          width: config.width,
+          height: config.height,
+          borderRadius: "2px 8px 8px 2px", //14,
           overflow: "hidden",
-          boxShadow: "0 10px 24px rgba(0,0,0,0.18)",
+          boxShadow: "6px 8px 15px rgba(0,0,0,0.3), -1px 0 2px rgba(0,0,0,0.1)", //"0 10px 24px rgba(0,0,0,0.18)",
           cursor: "pointer",
           transition: "transform 0.18s ease, box-shadow 0.18s ease",
           ...coverStyle,
+          backgroundSize: "cover",
+          backgroundPosition: "center",
         }}
         onClick={() => navigate(`/reader/${book.id}`)}
         onMouseEnter={(e) => {
@@ -716,8 +949,11 @@ function BookTile({ book, onEdit, onDelete }) {
           style={{
             position: "absolute",
             inset: 0,
-            background:
-              "linear-gradient(to top, rgba(17,24,39,0.72) 0%, rgba(17,24,39,0.18) 36%, rgba(17,24,39,0.04) 60%)",
+            //background:
+            //  "linear-gradient(to top, rgba(17,24,39,0.72) 0%, rgba(17,24,39,0.18) 36%, rgba(17,24,39,0.04) 60%)",
+            //background: "linear-gradient(to right, rgba(0,0,0,0.2) 0%, rgba(0,0,0,0) 4%, rgba(255,255,255,0.1) 5%, rgba(0,0,0,0) 10%)",
+            pointerEvents: "none",
+            zIndex: 1
           }}
         />
 
@@ -730,7 +966,7 @@ function BookTile({ book, onEdit, onDelete }) {
             fontWeight: 800,
             letterSpacing: "0.02em",
             background: "rgba(255,255,255,0.82)",
-            color: "#111827",
+            color: COLORS.ink,
             padding: "5px 8px",
             borderRadius: 999,
             border: "1px solid rgba(17,24,39,0.08)",
@@ -761,7 +997,18 @@ function BookTile({ book, onEdit, onDelete }) {
               justifyContent: "center",
             }}
           >
-            <button style={actionButtonStyle} onClick={() => navigate(`/reader/${book.id}`)}>
+            <button 
+              style={actionButtonStyle} 
+              onClick={() => navigate(`/reader/${book.id}`)}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = COLORS.frame; // Switch to #8E2424
+                e.currentTarget.style.transform = "scale(1.05)";  // pop animation
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = COLORS.ink;    
+                e.currentTarget.style.transform = "scale(1)";
+              }}
+            >
               Read
             </button>
 
@@ -769,6 +1016,14 @@ function BookTile({ book, onEdit, onDelete }) {
               <button
                 style={actionButtonStyle}
                 onClick={() => confirmOpen("EPUB", book.epub_link)}
+                onMouseEnter={(e) => {
+                e.currentTarget.style.background = COLORS.frame; // Switch to #8E2424
+                e.currentTarget.style.transform = "scale(1.05)";  // pop animation
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = COLORS.ink;    
+                e.currentTarget.style.transform = "scale(1)";
+              }}
               >
                 EPUB
               </button>
@@ -783,25 +1038,62 @@ function BookTile({ book, onEdit, onDelete }) {
               </button>
             )}
 
-            <button style={actionButtonStyle} onClick={() => onEdit(book)}>
+            <button 
+              style={actionButtonStyle} 
+              onClick={() => onEdit(book)}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = COLORS.frame; // Switch to #8E2424
+                e.currentTarget.style.transform = "scale(1.05)";  // pop animation
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = COLORS.ink;    
+                e.currentTarget.style.transform = "scale(1)";
+              }}
+            >
               Edit
             </button>
 
-            <button style={deleteButtonStyle} onClick={() => onDelete(book)}>
+            <button 
+              style={deleteButtonStyle} 
+              onClick={() => onDelete(book)}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.filter = "brightness(1.5)"; // Makes the #8E2424 glow
+                e.currentTarget.style.transform = "scale(1.08)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.filter = "brightness(1)";
+                e.currentTarget.style.transform = "scale(1)";
+              }}
+            >
               Delete
             </button>
           </div>
         </div>
       </div>
 
-      <div style={{ minHeight: 44 }}>
+      <div style={{ 
+        //minHeight: 44 
+        width: config.width, //"160px", 
+        //height: "85px", 
+        marginTop: "10px",
+        display: "flex",
+        flexDirection: "column",
+        justifyContent: "flex-start"
+      }}>
         <div
           style={{
-            fontSize: 15,
+            fontSize: config.fontSize, //14,
             fontWeight: 800,
-            lineHeight: 1.25,
-            color: "#111827",
+            lineHeight: 1.2,
+            color: inkColor, //COLORS.ink,
+            fontFamily: FONTS.headings,
             marginBottom: 4,
+            display: "-webkit-box",
+            WebkitLineClamp: "3",
+            WebkitBoxOrient: "vertical",
+            overflow: "hidden",
+            //height: "54px",
+            WebkitLineClamp: config.lineClamp,
           }}
         >
           {book.title || "(Untitled)"}
@@ -809,8 +1101,8 @@ function BookTile({ book, onEdit, onDelete }) {
 
         <div
           style={{
-            fontSize: 12,
-            color: "#6b7280",
+            fontSize: config.fontSize - 2, //12,
+            color: mutedColor, //"#6b7280",
             lineHeight: 1.3,
           }}
         >
@@ -906,11 +1198,11 @@ function SearchResultCard({ book, onAddEpub, onFindAudio, onAddAudio, onAddBoth 
             {hasEpub ? "Add EPUB" : "No EPUB"}
           </button>
 
-          <button onClick={findAudioClick} style={miniBtn("#f59e0b", "#111827")}>
+          <button onClick={findAudioClick} style={miniBtn("#f59e0b", COLORS.ink)}>
             Find audio
           </button>
 
-          <button onClick={addBothClick} style={miniBtn("#111827", "white")}>
+          <button onClick={addBothClick} style={miniBtn(COLORS.ink, "white")}>
             Add both
           </button>
 
@@ -933,9 +1225,14 @@ function SearchResultCard({ book, onAddEpub, onFindAudio, onAddAudio, onAddBoth 
 }
 
 function TabButton({ active, onClick, children }) {
+  const [isHovered, setIsHovered] = useState(false);
+
   return (
     <button
       onClick={onClick}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+
       style={{
         border: `1px solid ${
           active ? "rgba(242, 201, 76, 0.55)" : COLORS.border
@@ -948,8 +1245,12 @@ function TabButton({ active, onClick, children }) {
         fontWeight: 700,
         fontSize: 13,
         fontFamily: FONTS.ui,
-        boxShadow: active ? "0 0 0 1px rgba(242, 201, 76, 0.18)" : "none",
-        transition: "all 0.18s ease",
+        
+        transition: "all 0.2s ease",
+        transform: isHovered ? "translateY(-3px)" : "translateY(0)",
+        boxShadow: isHovered 
+          ? `0 6px 15px rgba(242, 201, 76, 0.4)` // Yellow (Status) Shadow
+          : active ? "0 0 0 1px rgba(242, 201, 76, 0.18)" : "none",
       }}
     >
       {children}
@@ -980,10 +1281,17 @@ function Field({ label, children }) {
 }
 
 const gridStyle = {
-  display: "grid",
+  /*display: "grid",
   gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))",
   gap: 24,
-  alignItems: "start",
+  alignItems: "start",*/
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))",
+  gap: "40px 24px", // Increased vertical gap to make room for the shelf
+  alignItems: "end", // Aligns books to sit "on" the shelf
+  paddingBottom: "10px",
+  // This adds a dark wooden line under every row of books
+  borderBottom: "8px solid #3d2b1f",
 };
 
 const inputStyle = {
