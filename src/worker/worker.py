@@ -47,6 +47,56 @@ def split_into_sentences(text: str):
 
     return restored
 
+def is_heading_like(sentence: str) -> bool:
+    s = sentence.strip()
+    return bool(re.fullmatch(r'(chapter|book)\s+[ivxlcdm\d]+\.?', s, flags=re.IGNORECASE))
+
+
+def should_merge_with_previous(sentence: str) -> bool:
+    s = sentence.strip()
+    if not s:
+        return True
+
+    word_count = len(s.split())
+
+    # very short fragments
+    if word_count <= 4:
+        return True
+
+    # starts with quote residue / punctuation / lowercase continuation feel
+    if re.match(r'^[\]\)\}"”\'‘’\-–,:;]+', s):
+        return True
+
+    # obvious abbreviation-fragment starts
+    if re.match(r'^(mr|mrs|ms|dr|prof|st)\.?$', s.strip().lower()):
+        return True
+
+    # sentence begins with a continuation-style capitalized surname after abbreviation split
+    if re.match(r'^[A-Z][a-z]+[,\s]', s) and word_count <= 6:
+        return True
+
+    return False
+
+
+def clean_sentences(sentences):
+    cleaned = []
+
+    for sentence in sentences:
+        s = re.sub(r"\s+", " ", sentence).strip()
+        if not s:
+            continue
+
+        # skip bare chapter headings as sync units
+        if is_heading_like(s):
+            continue
+
+        if cleaned and should_merge_with_previous(s):
+            cleaned[-1] = cleaned[-1].rstrip() + " " + s.lstrip()
+        else:
+            cleaned.append(s)
+
+    return cleaned
+
 def extract_xhtml_files(epub_path: str):
     with zipfile.ZipFile(epub_path, "r") as zf:
         names = zf.namelist()
@@ -162,10 +212,13 @@ def extract_text_from_epub(epub_path: str):
                 if len(long_sentences) < 3:
                     continue
 
+                raw_sentences = split_into_sentences(text)
+                cleaned_sentences = clean_sentences(raw_sentences)
+
                 chapters.append({
                     "file": name,
                     "text": text,
-                    "sentences": split_into_sentences(text)
+                    "sentences": cleaned_sentences
                 })
 
             except Exception as e:
@@ -195,6 +248,66 @@ def transcribe_audio(audio_path: str, model_name: str = "base"):
         "full_text": result.get("text", "").strip(),
         "segments": segments,
     }
+
+def split_transcript_text_into_units(text: str):
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return []
+
+    parts = re.split(r'(?<=[.!?])\s+', text)
+    return [p.strip() for p in parts if p.strip()]
+
+def explode_transcript_segments(segments):
+    exploded = []
+    new_id = 0
+
+    for seg in segments:
+        seg_text = (seg.get("text") or "").strip()
+        seg_start = seg.get("start")
+        seg_end = seg.get("end")
+
+        if not seg_text or seg_start is None or seg_end is None:
+            continue
+
+        units = split_transcript_text_into_units(seg_text)
+
+        # if splitting didn't help, keep the original segment
+        if len(units) <= 1:
+            exploded.append({
+                "id": new_id,
+                "start": seg_start,
+                "end": seg_end,
+                "text": seg_text,
+                "source_segment_id": seg.get("id"),
+            })
+            new_id += 1
+            continue
+
+        total_chars = sum(len(u) for u in units)
+        duration = seg_end - seg_start
+        running_start = seg_start
+
+        for i, unit in enumerate(units):
+            frac = len(unit) / total_chars if total_chars > 0 else 1 / len(units)
+            unit_duration = duration * frac
+
+            # make sure the last unit ends exactly at seg_end
+            if i == len(units) - 1:
+                unit_end = seg_end
+            else:
+                unit_end = running_start + unit_duration
+
+            exploded.append({
+                "id": new_id,
+                "start": running_start,
+                "end": unit_end,
+                "text": unit,
+                "source_segment_id": seg.get("id"),
+            })
+            new_id += 1
+            running_start = unit_end
+
+    return exploded
 
 def normalize_text(s: str) -> str:
     s = s.lower()
@@ -277,7 +390,7 @@ def align_sentences_to_transcript(chapters, transcript_segments, lookahead=12, m
                 "segment_ids": [seg["id"] for seg in best["segments"]],
             })
 
-            seg_ptr = best["cand_start"]
+            seg_ptr = max(seg_ptr, best["cand_start"] + best["window_size"] - 1)
         else:
             aligned.append({
                 "chapter_index": item["chapter_index"],
@@ -332,12 +445,20 @@ def main():
 
     print(f"Wrote transcript data to: {transcript_path}")
 
+    transcript_units = explode_transcript_segments(transcript_output["segments"])
+
+    transcript_units_path = os.path.join(OUTPUT_DIR, "transcript_units.json")
+    with open(transcript_units_path, "w", encoding="utf-8") as f:
+        json.dump(transcript_units, f, indent=2, ensure_ascii=False)
+
+    print(f"Wrote transcript units to: {transcript_units_path}")
+
     aligned_output = align_sentences_to_transcript(
         chapters,
-        transcript_output["segments"],
-        lookahead=12,
-        max_window=4,
-        threshold=0.72,
+        transcript_units,
+        lookahead=16,
+        max_window=5,
+        threshold=0.68,
     )
 
     aligned_path = os.path.join(OUTPUT_DIR, "aligned_timings.json")
