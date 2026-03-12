@@ -40,7 +40,7 @@ const generateBookId = (title) =>
 const coverFromGutendex = (formats) => formats?.["image/jpeg"] || "";
 const epubFromGutendex = (formats) => formats?.["application/epub+zip"] || "";
 
-export default function Dashboard({ user }) {
+export default function Dashboard({ user, darkMode, setDarkMode }) {
   const [gridSize, setGridSize] = useState("medium"); 
   const [sortBy, setSortBy] = useState("recent");
   const [books, setBooks] = useState([]);
@@ -60,8 +60,7 @@ export default function Dashboard({ user }) {
   const [isDarkToggleHovered, setIsDarkToggleHovered] = useState(false);
   const [isSaveHovered, setIsSaveHovered] = useState(false);
 
-  // dark mode
-  const [darkMode, setDarkMode] = useState(false);
+  
   const THEME = darkMode ? {
     canvas: "#1a1a2e",
     ink: "#e8e8f0",
@@ -470,7 +469,9 @@ export default function Dashboard({ user }) {
                 transition: "all 0.3s ease",
                 transform: isDarkToggleHovered ? "translateY(-3px)" : "translateY(0)",
                 boxShadow: isDarkToggleHovered
-                  ? "0 8px 20px rgba(26, 75, 93, 0.4)"
+                  ? darkMode
+                    ? "0 8px 20px rgba(242, 201, 76, 0.5)"
+                    : "0 8px 20px rgba(26, 75, 93, 0.4)"
                   : "0 2px 8px rgba(18, 38, 48, 0.08)",
               }}
             >
@@ -487,7 +488,7 @@ export default function Dashboard({ user }) {
           </p>
         </div>
 
-        <div style={{ display: "flex", gap: 6, background: darkMode ? "rgba(255,255,255,0.05)" : "rgba(18, 38, 48, 0.05)", padding: 4, borderRadius: 10 }}>
+        <div style={{ display: "flex", width: "100%", boxSizing: "border-box", gap: 6, background: darkMode ? "rgba(255,255,255,0.08)" : "rgba(18, 38, 48, 0.06)", padding: 4, borderRadius: 10 }}>
           {["small", "medium", "large"].map((size) => (
             <button
               key={size}
@@ -503,16 +504,18 @@ export default function Dashboard({ user }) {
                   ? "1px solid rgba(242, 201, 76, 0.55)"
                   : "1px solid transparent",
                 background: gridSize === size
-                  ? "rgba(242, 201, 76, 0.18)"
+                  ? (darkMode ? COLORS.status : COLORS.frame)
                   : hoveredSize === size
-                    ? darkMode ? "rgba(255,255,255,0.1)" : "rgba(242, 201, 76, 0.08)"
+                    ? darkMode ? "rgba(255,255,255,0.1)" : "rgba(18,38,48,0.08)"
                     : "transparent",
-                color: gridSize === size ? COLORS.frame : THEME.ink,
+                color: gridSize === size
+                  ? (darkMode ? COLORS.ink : COLORS.white)
+                  : THEME.ink,
                 fontWeight: gridSize === size ? "700" : "400",
                 boxShadow: gridSize === size
                   ? "0 0 0 1px rgba(242, 201, 76, 0.18)"
                   : hoveredSize === size
-                    ? "0 8px 20px rgba(242, 201, 76, 0.4)"
+                    ? "0 8px 20px rgba(26, 75, 93, 0.4)"
                     : "none",
                 transition: "all 0.3s ease",
                 transform: hoveredSize === size && gridSize !== size ? "translateY(-3px)" : "translateY(0)",
@@ -559,6 +562,7 @@ export default function Dashboard({ user }) {
         }}>
           <AddTile
             size={gridSize}
+            darkMode={darkMode}
             onClick={() => {
               setTab("upload");
               setModalOpen(true);
@@ -805,7 +809,7 @@ export default function Dashboard({ user }) {
   );
 }
 
-function AddTile({ onClick, size }) {
+function AddTile({ onClick, size, darkMode }) {
   const [isHovered, setIsHovered] = useState(false);
   const config = GRID_CONFIGS[size];
 
@@ -815,11 +819,6 @@ function AddTile({ onClick, size }) {
       onMouseEnter={() => setIsHovered(true)}  
       onMouseLeave={() => setIsHovered(false)}
       style={{
-        //background: "rgba(255,255,255,0.28)",
-        //border: "2px dashed rgba(26,75,93,0.16)",
-        //borderRadius: 16,
-        //boxShadow: "0 2px 10px rgba(18,38,48,0.04)",
-        //minHeight: 210,
         display: "flex",
         flexDirection: "column",
         gap: 10,
@@ -837,8 +836,10 @@ function AddTile({ onClick, size }) {
         width: config.width, //"160px",
         height: config.height, //"240px",
         //aspectRatio: "2 / 3",
-        background: "rgba(255,255,255,0.28)",
-        border: isHovered ? `2px solid ${COLORS.frame}` : `2px dashed ${COLORS.border}`, //border: `2px dashed ${COLORS.border}`, //"2px dashed rgba(26,75,93,0.2)",
+        background: darkMode ? "rgba(255,255,255,0.06)" : "rgba(255,255,255,0.28)",
+        border: isHovered 
+          ? darkMode ? `2px solid ${COLORS.status}` : `2px solid ${COLORS.frame}`
+          : darkMode ? "2px dashed rgba(232,232,240,0.25)" : `2px dashed ${COLORS.border}`,
         borderRadius: 8, 
         display: "flex",
         alignItems: "center",
@@ -855,23 +856,14 @@ function AddTile({ onClick, size }) {
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              //lineHeight: "58px",
-              //lineHeight: 1,
               fontSize: size === "small" ? 24 : 34, //34,
               // dynamic colors
-              background: isHovered ? COLORS.frame : "rgba(18, 38, 48, 0.05)",
-              border: `2px solid ${isHovered ? COLORS.frame : COLORS.ink}`,
-              color: isHovered ? "#FFFFFF" : COLORS.ink, 
+              background: isHovered ? (darkMode ? COLORS.status : COLORS.frame) : darkMode ? "rgba(255,255,255,0.08)" : "rgba(18, 38, 48, 0.05)",
+              border: `2px solid ${isHovered ? (darkMode ? COLORS.status : COLORS.frame) : (darkMode ? "#e8e8f0" : COLORS.ink)}`,
+              color: isHovered ? (darkMode ? COLORS.ink : "#FFFFFF") : (darkMode ? "#e8e8f0" : COLORS.ink), 
               
               // THE ANIMATION:
               transition: "all 0.3s ease",
-              
-              
-              /*margin: "0",
-              background: "rgba(230,126,126,0.10)",
-              border: "1px solid rgba(230,126,126,0.28)",
-              color: COLORS.frame,*/
-              //fontFamily: FONTS.ui,
             }}
           >
             <span style={{ marginTop: "-4px" }}>+</span>
@@ -886,11 +878,11 @@ function AddTile({ onClick, size }) {
           fontSize: config.fontSize, // 14, 
           fontFamily: FONTS.ui, 
           transition: "color 0.3s ease",
-          color: isHovered ? COLORS.frame : COLORS.ink }}>
+          color: isHovered ? (darkMode ? COLORS.status : COLORS.frame) : (darkMode ? "#e8e8f0" : COLORS.ink) }}>
             Add new book
         </b>
         {size !== "small" && (
-          <div style={{ fontSize: 12, color: COLORS.mutedInk, fontFamily: FONTS.ui }}>
+          <div style={{ fontSize: 12, color: darkMode ? "rgba(232,232,240,0.55)" : COLORS.mutedInk, fontFamily: FONTS.ui }}>
             Upload or search
           </div>
         )}

@@ -26,7 +26,7 @@ const FONTS = {
   reading: '"Source Serif 4", serif',
 };
 
-export default function Reader() {
+export default function Reader({ darkMode, setDarkMode }) {
   const { bookId } = useParams();
   const navigate = useNavigate();
   const viewerRef = useRef(null);
@@ -58,6 +58,9 @@ export default function Reader() {
   const [hoverBookshelf, setHoverBookshelf] = useState(false);
   const [hoverSinglePage, setHoverSinglePage] = useState(false); // ← add
   const [hoverDoublePage, setHoverDoublePage] = useState(false);
+  const [hoverFontDec, setHoverFontDec] = useState(false);
+  const [hoverFontInc, setHoverFontInc] = useState(false);
+  const [hoverDarkMode, setHoverDarkMode] = useState(false);
 
   const [currentPage, setCurrentPage] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
@@ -65,7 +68,7 @@ export default function Reader() {
   const [fontSize, setFontSize] = useState(100); 
   const [spread, setSpread] = useState("none");
 
-  const [darkMode, setDarkMode] = useState(false);
+  
   const THEME = darkMode ? {
     canvas: "#1a1a2e",
     ink: "#e8e8f0",
@@ -451,6 +454,11 @@ const isGutenberg = (url) =>
     return <Dashboard onBack={() => setPage("reader")} user={user} />;
   }
 
+  const btnStyle = {
+    ...styles.btn,
+    background: darkMode ? "rgba(230,126,126,0.55)" : COLORS.spark,
+    boxShadow: darkMode ? "0 4px 10px rgba(230,126,126,0.12)" : "0 4px 10px rgba(230,126,126,0.25)",
+  };
   // ---------------- UI ----------------
   return (
     <div style={{ ...styles.page, background: THEME.canvas, color: THEME.ink }}>
@@ -488,10 +496,12 @@ const isGutenberg = (url) =>
 
       <button
         onClick={() => setDarkMode(d => !d)}
+        onMouseEnter={() => setHoverDarkMode(true)}
+        onMouseLeave={() => setHoverDarkMode(false)}
         style={{
           position: "fixed",
           top: 16,
-          right: 148,   // sits left of the My Bookshelf button
+          right: 148,
           padding: "10px 14px",
           borderRadius: 14,
           border: "none",
@@ -502,7 +512,13 @@ const isGutenberg = (url) =>
           fontWeight: 700,
           fontFamily: FONTS.ui,
           fontSize: 13,
-          boxShadow: "0 4px 14px rgba(18,38,48,0.08)",
+          transform: hoverDarkMode ? "translateY(-4px)" : "translateY(0)",
+          boxShadow: hoverDarkMode
+            ? darkMode
+              ? "0 10px 20px rgba(242, 201, 76, 0.5)"   // yellow glow in dark mode
+              : "0 10px 20px rgba(26, 75, 93, 0.45)"     // blue glow in light mode
+            : "0 4px 14px rgba(18, 38, 48, 0.15)",
+          transition: "all 0.3s ease",
         }}
       >
         {darkMode ? "☀ Light" : "☾ Dark"}
@@ -527,7 +543,7 @@ const isGutenberg = (url) =>
               onMouseEnter={() => setHoverPrev(true)}
               onMouseLeave={() => setHoverPrev(false)}
               style={{
-                ...styles.btn,
+                ...btnStyle,
                 transform: hoverPrev ? "translateY(-3px)" : "translateY(0)",
                 boxShadow: hoverPrev ? "0 8px 20px rgba(230, 126, 126, 0.4)" : styles.btn.boxShadow,
                 transition: "all 0.2s ease"
@@ -540,7 +556,7 @@ const isGutenberg = (url) =>
               onMouseEnter={() => setHoverNext(true)}
               onMouseLeave={() => setHoverNext(false)}
               style={{
-                ...styles.btn,
+                ...btnStyle,
                 transform: hoverNext ? "translateY(-3px)" : "translateY(0)",
                 boxShadow: hoverNext ? "0 8px 20px rgba(230, 126, 126, 0.4)" : styles.btn.boxShadow,
                 transition: "all 0.2s ease"
@@ -554,7 +570,7 @@ const isGutenberg = (url) =>
               onMouseEnter={() => setHoverSave(true)}
               onMouseLeave={() => setHoverSave(false)}
               style={{
-                ...styles.btn,
+                ...btnStyle,
                 transform: hoverSave ? "translateY(-3px)" : "translateY(0)",
                 boxShadow: hoverSave ? "0 8px 20px rgba(230, 126, 126, 0.4)" : styles.btn.boxShadow,
                 transition: "all 0.2s ease"
@@ -570,7 +586,8 @@ const isGutenberg = (url) =>
               gap: 4, 
               minWidth: 180,
               color: THEME.ink,
-              background: darkMode ? "rgba(255,255,255,0.08)" : "rgba(242,201,76,0.25)",
+              background: darkMode ? "rgba(255,255,255,0.08)" : "rgba(18,38,48,0.06)",
+              border: darkMode ? "1px solid rgba(242,201,76,0.25)" : `1px solid ${COLORS.border}`,
             }}>
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
                 <span><b>Page</b> {currentPage}{totalPages > 0 ? ` / ${totalPages}` : ""}</span>
@@ -585,7 +602,7 @@ const isGutenberg = (url) =>
                 <div style={{
                   height: "100%",
                   width: `${progress}%`,
-                  background: COLORS.frame,
+                  background: darkMode ? COLORS.status : COLORS.frame,
                   borderRadius: 999,
                   transition: "width 0.4s ease",
                 }} />
@@ -595,16 +612,42 @@ const isGutenberg = (url) =>
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <button
                 onClick={() => setFontSize(f => Math.max(60, f - 10))}
-                style={{ ...styles.btn, padding: "6px 10px", fontSize: 16 }}
+                onMouseEnter={() => setHoverFontDec(true)}
+                onMouseLeave={() => setHoverFontDec(false)}
+                style={{
+                  ...btnStyle,
+                  padding: "6px 10px",
+                  fontSize: 16,
+                  transform: hoverFontDec ? "translateY(-3px)" : "translateY(0)",
+                  boxShadow: hoverFontDec ? "0 8px 20px rgba(230, 126, 126, 0.4)" : styles.btn.boxShadow,
+                  transition: "all 0.2s ease"
+                }}
               >A−</button>
               <span style={{ fontSize: 12, color: THEME.ink, fontFamily: FONTS.ui }}>{fontSize}%</span>
               <button
                 onClick={() => setFontSize(f => Math.min(200, f + 10))}
-                style={{ ...styles.btn, padding: "6px 10px", fontSize: 16 }}
+                onMouseEnter={() => setHoverFontInc(true)}
+                onMouseLeave={() => setHoverFontInc(false)}
+                style={{
+                  ...btnStyle,
+                  padding: "6px 10px",
+                  fontSize: 16,
+                  transform: hoverFontInc ? "translateY(-3px)" : "translateY(0)",
+                  boxShadow: hoverFontInc ? "0 8px 20px rgba(230, 126, 126, 0.4)" : styles.btn.boxShadow,
+                  transition: "all 0.2s ease"
+                }}
               >A+</button>
             </div>
             
-            <div style={{ display: "flex", gap: 4, background: "rgba(18,38,48,0.06)", borderRadius: 8, padding: 3 }}>
+            <div style={{ 
+              display: "flex", 
+              gap: 4, 
+              background: darkMode ? "rgba(255,255,255,0.08)" : "rgba(18,38,48,0.06)", 
+              borderRadius: 8, 
+              padding: 3,
+              border: darkMode ? "1px solid rgba(242,201,76,0.25)" : "1px solid rgba(18,38,48,0.12)", 
+              }}
+            >
               <button
                 onClick={() => setSpread("none")}
                 onMouseEnter={() => setHoverSinglePage(true)}
@@ -612,7 +655,9 @@ const isGutenberg = (url) =>
                 style={{
                   ...styles.btn,
                   padding: "6px 10px",
-                  background: spread === "none" ? COLORS.frame : "transparent",
+                  background: spread === "none"
+                    ? (darkMode ? COLORS.status : COLORS.frame)
+                    : "transparent",
                   color: spread === "none" ? COLORS.white : COLORS.ink,
                   boxShadow: hoverSinglePage && spread !== "none"
                     ? "0 8px 20px rgba(26, 75, 93, 0.4)"
@@ -627,7 +672,7 @@ const isGutenberg = (url) =>
               >
                 <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
                   <rect x="4" y="2" width="10" height="14" rx="1.5"
-                    fill={spread === "none" ? COLORS.white : COLORS.ink} />
+                    fill={spread === "none" ? (darkMode ? COLORS.ink : COLORS.white) : (darkMode ? "#e8e8f0" : COLORS.ink)} />
                 </svg>
               </button>
 
@@ -638,7 +683,9 @@ const isGutenberg = (url) =>
                 style={{
                   ...styles.btn,
                   padding: "6px 10px",
-                  background: spread === "always" ? COLORS.frame : "transparent",
+                  background: spread === "always"
+                    ? (darkMode ? COLORS.status : COLORS.frame)
+                    : "transparent",
                   color: spread === "always" ? COLORS.white : COLORS.ink,
                   boxShadow: hoverDoublePage && spread !== "always"
                     ? "0 8px 20px rgba(26, 75, 93, 0.4)"
@@ -653,9 +700,9 @@ const isGutenberg = (url) =>
               >
                 <svg width="22" height="18" viewBox="0 0 22 18" fill="none">
                   <rect x="1" y="2" width="9" height="14" rx="1.5"
-                    fill={spread === "always" ? COLORS.white : COLORS.ink} />
+                    fill={spread === "always" ? (darkMode ? COLORS.ink : COLORS.white) : (darkMode ? "#e8e8f0" : COLORS.ink)} />
                   <rect x="12" y="2" width="9" height="14" rx="1.5"
-                    fill={spread === "always" ? COLORS.white : COLORS.ink} />
+                    fill={spread === "always" ? (darkMode ? COLORS.ink : COLORS.white) : (darkMode ? "#e8e8f0" : COLORS.ink)} />
                 </svg>
               </button>
             </div>

@@ -12,8 +12,10 @@ function ProtectedRoute({ user, children }) {
   return user ? children : <Navigate to="/login" replace />;
 }
 
+
 export default function App() {
   const [user, setUser] = useState(undefined);
+  const [darkMode, setDarkMode] = useState(false);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => setUser(u || null));
@@ -27,11 +29,11 @@ export default function App() {
         path="/"
         element={
           <ProtectedRoute user={user}>
-            <Dashboard user={user} />
+            <Dashboard user={user} darkMode={darkMode} setDarkMode={setDarkMode} />
           </ProtectedRoute>
         }
       />
-      <Route path="/reader/:bookId" element={<Reader user={user} />} />
+      <Route path="/reader/:bookId" element={<Reader user={user} darkMode={darkMode} setDarkMode={setDarkMode} />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
