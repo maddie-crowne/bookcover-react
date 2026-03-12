@@ -116,7 +116,16 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
   }, []);
 
   const logout = async () => {
-    await signOut(auth);
+    const confirmed = window.confirm("Are you sure you want to log out?");
+
+    if (confirmed) {
+      try {
+        await signOut(auth);
+        navigate("/"); 
+      } catch (error) {
+        console.error("Logout failed:", error);
+      }
+    }
   };
 
   const openEditModal = (book) => {
@@ -419,24 +428,22 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
               style={{
                 background: COLORS.frame, // Midnight Navy default
                 color: COLORS.white,
-
                 fontFamily: FONTS.ui,
-                //fontSize: 14,
-                fontWeight: 500,
-                
+                fontSize: 13,
+                fontWeight: 600,
+                lineHeight: 2,
                 // Shape & Spacing
                 border: "none",
                 borderRadius: 12,
-                padding: "10px 18px",
+                width: 42,
+                height: 42,
+                padding: 0,//"10px 12px",
+                
                 cursor: "pointer",
 
-                /*display: "flex",
+                display: "flex",
                 alignItems: "center",
-                gap: 10,
-                background: COLORS.white,
-                border: `1px solid ${COLORS.border}`,
-                borderRadius: 14,
-                padding: "10px 12px",*/
+                justifyContent: "center",
                 
                 // Interaction & Animation
                 transition: "all 0.3s ease",
@@ -449,7 +456,11 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
                 
               }}
             >
-              Logout
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                <polyline points="16 17 21 12 16 7"/>
+                <line x1="21" y1="12" x2="9" y2="12"/>
+              </svg>
             </button>
 
             <button
@@ -461,7 +472,12 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
                 color: darkMode ? COLORS.ink : COLORS.white,
                 border: "none",
                 borderRadius: 12,
-                padding: "10px 14px",
+                height: 42,
+                padding: "0 14px",
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
+                
                 cursor: "pointer",
                 fontFamily: FONTS.ui,
                 fontWeight: 600,

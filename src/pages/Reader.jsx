@@ -7,7 +7,8 @@ import ePub from "epubjs";
 
 import Dashboard from "./Dashboard";
 
-import { onAuthStateChanged } from "firebase/auth";
+
+import { onAuthStateChanged, signOut } from "firebase/auth";
 import { saveBookForUser } from "../services/saveBook";
 const COLORS = {
   canvas: "#F9EAEA",
@@ -68,6 +69,8 @@ export default function Reader({ darkMode, setDarkMode }) {
   const [fontSize, setFontSize] = useState(100); 
   const [spread, setSpread] = useState("none");
 
+  const [isLogoutHovered, setIsLogoutHovered] = useState(false);
+
   
   const THEME = darkMode ? {
     canvas: "#1a1a2e",
@@ -85,6 +88,20 @@ export default function Reader({ darkMode, setDarkMode }) {
     white: COLORS.white,
     border: COLORS.border,
     sidebarBg: COLORS.frame,
+  };
+
+
+  const logout = async () => {
+    const confirmed = window.confirm("Are you sure you want to log out?");
+
+    if (confirmed) {
+      try {
+        await signOut(auth);
+        navigate("/"); 
+      } catch (error) {
+        console.error("Logout failed:", error);
+      }
+    }
   };
   
   // ---------------- Auth ----------------
@@ -330,23 +347,30 @@ const isGutenberg = (url) =>
       })
       renditionRef.current = rendition;
       rendition.themes.default({
-        body: {
-          "font-family": '"Libre Baskerville", Georgia, serif !important',
-          color: `${darkMode ? "#e8e8f0" : COLORS.ink} !important`,
-          "background-color": `${darkMode ? "#1a1a2e" : COLORS.canvas} !important`,
-          "line-height": "1.7",
-        },
-        p: {
-          "font-family": '"Libre Baskerville", Georgia, serif !important',
-          "line-height": "1.7",
-          color: `${darkMode ? "#e8e8f0" : COLORS.ink} !important`,
-        },
-        span: { color: `${darkMode ? "#e8e8f0" : COLORS.ink} !important` },
-        "*": { color: `${darkMode ? "#e8e8f0" : COLORS.ink} !important` },
-        h1: { color: `${darkMode ? "#e8e8f0" : COLORS.ink} !important` },
-        h2: { color: `${darkMode ? "#e8e8f0" : COLORS.ink} !important` },
-        h3: { color: `${darkMode ? "#e8e8f0" : COLORS.ink} !important` },
-      });
+      body: {
+        "font-family": '"Libre Baskerville", Georgia, serif !important',
+        "color": `${darkMode ? "#e8e8f0" : COLORS.ink} !important`,
+        "background-color": `${darkMode ? "#1a1a2e" : COLORS.canvas} !important`,
+        "line-height": "1.7",
+        
+      },
+      
+      "p, span, div, section, article": {
+        "font-family": '"Libre Baskerville", Georgia, serif !important',
+        "line-height": "1.7",
+        "color": "inherit !important",
+        "font-size": "inherit !important", 
+      },
+      
+      "h1, h2, h3, h4": {
+        "color": "inherit !important",
+        "font-family": '"Merriweather", serif !important',
+      },
+      
+      "*": { 
+        "color": `${darkMode ? "#e8e8f0" : COLORS.ink} !important`,
+      },
+    });
 
       rendition.on("relocated", (location) => {
         console.log("[relocated]", JSON.stringify(location, null, 2));
@@ -458,71 +482,177 @@ const isGutenberg = (url) =>
     ...styles.btn,
     background: darkMode ? "rgba(230,126,126,0.55)" : COLORS.spark,
     boxShadow: darkMode ? "0 4px 10px rgba(230,126,126,0.12)" : "0 4px 10px rgba(230,126,126,0.25)",
+    
+    height: 32,           // Standardized height
+    padding: "0 12px",    // Horizontal padding
+
+    borderRadius: 8,     // Matches top bar rounding
+    fontWeight: 500,
+    fontSize: 12,
+
+    border: "none",
+    
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontFamily: FONTS.ui,
+    
+    cursor: "pointer",
+    transition: "all 0.3s ease",
   };
   // ---------------- UI ----------------
   return (
     <div style={{ ...styles.page, background: THEME.canvas, color: THEME.ink }}>
-      <button
-        onClick={() => navigate("/")}
-        onMouseEnter={() => setHoverBookshelf(true)}
-        onMouseLeave={() => setHoverBookshelf(false)}
-        style={{
-          ...styles.bookshelfBtn,
-          // --- BRAND TYPOGRAPHY ---
-          fontFamily: FONTS.headings, 
-          fontWeight: "bold",
-
-          background: COLORS.frame, // Always Blue
-          color: COLORS.white,      // White text for contrast
-          
-          // --- HOVER TRANSFORM & COLOR ---
-          
-          transform: hoverBookshelf ? "translateY(-4px)" : "translateY(0)",
-          
-          // --- CORAL SHADOW ---
-          boxShadow: hoverBookshelf 
-            ? "0 10px 20px rgba(26, 75, 93, 0.45)" // Stronger Blue highlight on hover
-            : "0 4px 14px rgba(18, 38, 48, 0.15)",
+      <div style={{
+        position: "fixed",
+        top: 16,
+        right: 16,
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        background: THEME.white,
+        border: `1px solid ${COLORS.border}`,
+        borderRadius: 14,
+        padding: "10px 12px",
+        boxShadow: "0 4px 14px rgba(18,38,48,0.08)",
+        zIndex: 9999,
+        pointerEvents: "auto",
+      }}>
+        <button
+          onClick={() => navigate("/")}
+          onMouseEnter={() => setHoverBookshelf(true)}
+          onMouseLeave={() => setHoverBookshelf(false)}
+          style={{
+            background: COLORS.frame,
+            color: COLORS.white,
+            border: "none",
+            borderRadius: 12,
             
-          transition: "all 0.3s ease",
-          border: "none",
-          cursor: "pointer",
-          zIndex: 9999,
-        }}
-        title="Go to your bookshelf"
-      >
-        My Bookshelf
-      </button>
+            width: "auto", 
+            height: 42,
+            
+            padding: "0 16px",
 
-      <button
-        onClick={() => setDarkMode(d => !d)}
-        onMouseEnter={() => setHoverDarkMode(true)}
-        onMouseLeave={() => setHoverDarkMode(false)}
-        style={{
-          position: "fixed",
-          top: 16,
-          right: 148,
-          padding: "10px 14px",
-          borderRadius: 14,
-          border: "none",
-          background: darkMode ? COLORS.status : COLORS.ink,
-          color: darkMode ? COLORS.ink : COLORS.white,
-          cursor: "pointer",
-          zIndex: 9999,
-          fontWeight: 700,
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "8px",
+
+            fontFamily: FONTS.ui,
+            fontWeight: 600,
+            fontSize: 13,
+            whiteSpace: "nowrap",
+
+            transition: "all 0.3s ease",
+            transform: hoverBookshelf ? "translateY(-3px)" : "translateY(0)",
+            boxShadow: hoverBookshelf
+              ? "0 8px 20px rgba(26, 75, 93, 0.4)"
+              : "0 2px 8px rgba(18, 38, 48, 0.08)",
+          }}
+        >
+          
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
+              xmlns="http://www.w3.org/2000/svg">
+            <path d="M3 10.5L12 3L21 10.5" 
+                  stroke="white" 
+                  stroke-width="2" 
+                  stroke-linecap="round" 
+                  stroke-linejoin="round"/>
+                  
+            <path d="M5 10V20H19V10" 
+                  stroke="white" 
+                  stroke-width="2" 
+                  stroke-linecap="round" 
+                  stroke-linejoin="round"/>
+                  
+            <path d="M10 20V14H14V20" 
+                  stroke="white" 
+                  stroke-width="2" 
+                  stroke-linecap="round" 
+                  stroke-linejoin="round"/>
+          </svg>
+          <span>My Bookshelf</span>
+        </button>
+        
+        <span style={{
+          fontSize: 12,
+          color: THEME.mutedInk,
+          maxWidth: 280,
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
           fontFamily: FONTS.ui,
-          fontSize: 13,
-          transform: hoverDarkMode ? "translateY(-4px)" : "translateY(0)",
-          boxShadow: hoverDarkMode
-            ? darkMode
-              ? "0 10px 20px rgba(242, 201, 76, 0.5)"   // yellow glow in dark mode
-              : "0 10px 20px rgba(26, 75, 93, 0.45)"     // blue glow in light mode
-            : "0 4px 14px rgba(18, 38, 48, 0.15)",
-          transition: "all 0.3s ease",
-        }}
-      >
-        {darkMode ? "☀ Light" : "☾ Dark"}
-      </button>
+        }}>
+          {user ? user.email : "Guest"}
+        </span>
+
+        <button
+          onClick={logout}
+          onMouseEnter={() => setIsLogoutHovered(true)}
+          onMouseLeave={() => setIsLogoutHovered(false)}
+          style={{
+            background: COLORS.frame, 
+            color: COLORS.white,
+            fontFamily: FONTS.ui,
+            fontSize: 13,
+            fontWeight: 600,
+            lineHeight: 1,
+            border: "none",
+            borderRadius: 12,
+            width: 42,
+            height: 42,
+            padding: 0,//"10px 12px",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+
+            transition: "all 0.3s ease",
+            transform: isLogoutHovered ? "translateY(-3px)" : "translateY(0)",
+            boxShadow: isLogoutHovered 
+              ? "0 8px 20px rgba(26, 75, 93, 0.4)" 
+              : "0 2px 8px rgba(18, 38, 48, 0.08)",
+          }}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+            <polyline points="16 17 21 12 16 7"/>
+            <line x1="21" y1="12" x2="9" y2="12"/>
+          </svg>
+        </button>
+
+        <button
+          onClick={() => setDarkMode(d => !d)}
+          onMouseEnter={() => setHoverDarkMode(true)}
+          onMouseLeave={() => setHoverDarkMode(false)}
+          style={{
+            background: darkMode ? COLORS.status : COLORS.ink,
+            color: darkMode ? COLORS.ink : COLORS.white,
+            border: "none",
+            borderRadius: 12,
+            height: 42,
+            padding: "0 14px",
+            display: "flex",
+            alignItems: "center",
+            gap: "6px",
+            cursor: "pointer",
+            fontFamily: FONTS.ui,
+            fontWeight: 600,
+            fontSize: 13,
+            lineHeight: 1,
+            transition: "all 0.3s ease",
+            transform: hoverDarkMode ? "translateY(-3px)" : "translateY(0)",
+            boxShadow: hoverDarkMode
+              ? darkMode
+                ? "0 8px 20px rgba(242, 201, 76, 0.5)"
+                : "0 8px 20px rgba(26, 75, 93, 0.4)"
+              : "0 2px 8px rgba(18, 38, 48, 0.08)",
+          }}
+        >
+          {darkMode ? "☀ Light" : "☾ Dark"}
+        </button>
+      </div>
 
       <h1 style={{ ...styles.title, color: THEME.ink }}>Reader</h1>
       <p style={{ ...styles.subtitle, color: THEME.mutedInk }}>
