@@ -56,6 +56,8 @@ export default function Reader() {
   const [hoverNext, setHoverNext] = useState(false);
   const [hoverSave, setHoverSave] = useState(false);
   const [hoverBookshelf, setHoverBookshelf] = useState(false);
+  const [hoverSinglePage, setHoverSinglePage] = useState(false); // ← add
+  const [hoverDoublePage, setHoverDoublePage] = useState(false);
 
   const [currentPage, setCurrentPage] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
@@ -605,28 +607,57 @@ const isGutenberg = (url) =>
             <div style={{ display: "flex", gap: 4, background: "rgba(18,38,48,0.06)", borderRadius: 8, padding: 3 }}>
               <button
                 onClick={() => setSpread("none")}
+                onMouseEnter={() => setHoverSinglePage(true)}
+                onMouseLeave={() => setHoverSinglePage(false)}
                 style={{
                   ...styles.btn,
                   padding: "6px 10px",
-                  fontSize: 12,
                   background: spread === "none" ? COLORS.frame : "transparent",
                   color: spread === "none" ? COLORS.white : COLORS.ink,
-                  boxShadow: "none",
+                  boxShadow: hoverSinglePage && spread !== "none"
+                    ? "0 8px 20px rgba(26, 75, 93, 0.4)"
+                    : "none",
+                  transform: hoverSinglePage && spread !== "none" ? "translateY(-3px)" : "translateY(0)",
+                  transition: "all 0.2s ease",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
                 }}
                 title="Single page"
-              >▭</button>
+              >
+                <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+                  <rect x="4" y="2" width="10" height="14" rx="1.5"
+                    fill={spread === "none" ? COLORS.white : COLORS.ink} />
+                </svg>
+              </button>
+
               <button
                 onClick={() => setSpread("always")}
+                onMouseEnter={() => setHoverDoublePage(true)}
+                onMouseLeave={() => setHoverDoublePage(false)}
                 style={{
                   ...styles.btn,
                   padding: "6px 10px",
-                  fontSize: 12,
                   background: spread === "always" ? COLORS.frame : "transparent",
                   color: spread === "always" ? COLORS.white : COLORS.ink,
-                  boxShadow: "none",
+                  boxShadow: hoverDoublePage && spread !== "always"
+                    ? "0 8px 20px rgba(26, 75, 93, 0.4)"
+                    : "none",
+                  transform: hoverDoublePage && spread !== "always" ? "translateY(-3px)" : "translateY(0)",
+                  transition: "all 0.2s ease",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
                 }}
                 title="Two pages"
-              >▭▭</button>
+              >
+                <svg width="22" height="18" viewBox="0 0 22 18" fill="none">
+                  <rect x="1" y="2" width="9" height="14" rx="1.5"
+                    fill={spread === "always" ? COLORS.white : COLORS.ink} />
+                  <rect x="12" y="2" width="9" height="14" rx="1.5"
+                    fill={spread === "always" ? COLORS.white : COLORS.ink} />
+                </svg>
+              </button>
             </div>
 
 

@@ -57,6 +57,8 @@ export default function Dashboard({ user }) {
   const [isUploadHovered, setIsUploadHovered] = useState(false);
   const [isSearchHovered, setIsSearchHovered] = useState(false);
   const [isLogoutHovered, setIsLogoutHovered] = useState(false);
+  const [isDarkToggleHovered, setIsDarkToggleHovered] = useState(false);
+  const [isSaveHovered, setIsSaveHovered] = useState(false);
 
   // dark mode
   const [darkMode, setDarkMode] = useState(false);
@@ -89,6 +91,7 @@ export default function Dashboard({ user }) {
   const [editEpubFile, setEditEpubFile] = useState(null);
   const [editAudioFile, setEditAudioFile] = useState(null);
   const [editStatus, setEditStatus] = useState("");
+  const [hoveredSize, setHoveredSize] = useState(null);
 
   const booksCol = useMemo(() => collection(db, "Users", user.uid, "Books"), [user.uid]);
   const sortedBooks = useMemo(() => {
@@ -452,6 +455,8 @@ export default function Dashboard({ user }) {
 
             <button
               onClick={() => setDarkMode(d => !d)}
+              onMouseEnter={() => setIsDarkToggleHovered(true)}
+              onMouseLeave={() => setIsDarkToggleHovered(false)}
               style={{
                 background: darkMode ? COLORS.status : COLORS.ink,
                 color: darkMode ? COLORS.ink : COLORS.white,
@@ -462,6 +467,11 @@ export default function Dashboard({ user }) {
                 fontFamily: FONTS.ui,
                 fontWeight: 600,
                 fontSize: 13,
+                transition: "all 0.3s ease",
+                transform: isDarkToggleHovered ? "translateY(-3px)" : "translateY(0)",
+                boxShadow: isDarkToggleHovered
+                  ? "0 8px 20px rgba(26, 75, 93, 0.4)"
+                  : "0 2px 8px rgba(18, 38, 48, 0.08)",
               }}
             >
               {darkMode ? "☀ Light" : "☾ Dark"}
@@ -482,17 +492,30 @@ export default function Dashboard({ user }) {
             <button
               key={size}
               onClick={() => setGridSize(size)}
+              onMouseEnter={() => setHoveredSize(size)}
+              onMouseLeave={() => setHoveredSize(null)}
               style={{
                 padding: "4px 10px",
                 fontSize: 11,
-                borderRadius: 7,
+                borderRadius: 999,
                 cursor: "pointer",
-                border: "none",
-                background: gridSize === size ? THEME.white : "transparent",
-                color: THEME.ink,
+                border: gridSize === size
+                  ? "1px solid rgba(242, 201, 76, 0.55)"
+                  : "1px solid transparent",
+                background: gridSize === size
+                  ? "rgba(242, 201, 76, 0.18)"
+                  : hoveredSize === size
+                    ? darkMode ? "rgba(255,255,255,0.1)" : "rgba(242, 201, 76, 0.08)"
+                    : "transparent",
+                color: gridSize === size ? COLORS.frame : THEME.ink,
                 fontWeight: gridSize === size ? "700" : "400",
-                boxShadow: gridSize === size ? "0 2px 5px rgba(0,0,0,0.1)" : "none",
-                transition: "all 0.2s ease",
+                boxShadow: gridSize === size
+                  ? "0 0 0 1px rgba(242, 201, 76, 0.18)"
+                  : hoveredSize === size
+                    ? "0 8px 20px rgba(242, 201, 76, 0.4)"
+                    : "none",
+                transition: "all 0.3s ease",
+                transform: hoveredSize === size && gridSize !== size ? "translateY(-3px)" : "translateY(0)",
                 fontFamily: FONTS.ui,
               }}
             >
@@ -743,7 +766,24 @@ export default function Dashboard({ user }) {
               />
             </Field>
 
-            <button onClick={saveEditedBook} style={{ ...btnWide, background: COLORS.spark }}>
+            <button 
+              onClick={saveEditedBook} 
+              onMouseEnter={() => setIsSaveHovered(true)}
+              onMouseLeave={() => setIsSaveHovered(false)}
+              style={{ 
+                ...btnWide, 
+                background: COLORS.frame,
+                color: COLORS.white,
+                cursor: "pointer",
+                border: "none",
+                transition: "all 0.3s ease",
+                transform: isSaveHovered ? "translateY(-3px)" : "translateY(0)",
+                boxShadow: isSaveHovered
+                  ? "0 8px 20px rgba(26, 75, 93, 0.4)"
+                  : "0 2px 8px rgba(18, 38, 48, 0.08)",
+
+              }}
+            >
               Save Changes
             </button>
 
