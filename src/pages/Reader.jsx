@@ -478,6 +478,25 @@ const isGutenberg = (url) =>
     return <Dashboard onBack={() => setPage("reader")} user={user} />;
   }
 
+  const sideBtnStyle = {
+    position: "absolute",
+    top: "50%",
+    transform: "translateY(-50%)",
+    zIndex: 10,
+    width: 48,
+    height: 48,
+    borderRadius: "50%",
+    background: darkMode ? "rgba(230,126,126,0.85)" : COLORS.spark,
+    color: "#fff",
+    border: "none",
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    boxShadow: "0 4px 12px rgba(0,0,0,0.2)",
+    transition: "all 0.2s ease",
+  };
+
   const btnStyle = {
     ...styles.btn,
     background: darkMode ? "rgba(230,126,126,0.55)" : COLORS.spark,
@@ -668,32 +687,8 @@ const isGutenberg = (url) =>
           border: `1px solid ${THEME.border}` 
         }}>
           <div style={{ ...styles.readerTopBar, background: THEME.canvas }}>
-            <button 
-              onClick={prevPage}
-              onMouseEnter={() => setHoverPrev(true)}
-              onMouseLeave={() => setHoverPrev(false)}
-              style={{
-                ...btnStyle,
-                transform: hoverPrev ? "translateY(-3px)" : "translateY(0)",
-                boxShadow: hoverPrev ? "0 8px 20px rgba(230, 126, 126, 0.4)" : styles.btn.boxShadow,
-                transition: "all 0.2s ease"
-              }}  
-            >
-              Prev
-            </button>
-            <button 
-              onClick={nextPage}
-              onMouseEnter={() => setHoverNext(true)}
-              onMouseLeave={() => setHoverNext(false)}
-              style={{
-                ...btnStyle,
-                transform: hoverNext ? "translateY(-3px)" : "translateY(0)",
-                boxShadow: hoverNext ? "0 8px 20px rgba(230, 126, 126, 0.4)" : styles.btn.boxShadow,
-                transition: "all 0.2s ease"
-              }}
-            >
-              Next
-            </button>
+            
+            
 
             <button 
               onClick={saveCurrentBook}
@@ -848,7 +843,50 @@ const isGutenberg = (url) =>
             </label>
           </div>
 
-          <div ref={viewerRef} style={{ ...styles.viewer, background: THEME.canvas, borderLeft: `6px solid ${THEME.frame}` }} />
+          <div style={{ position: "relative", width: "100%", flex: 1, display: "flex", flexDirection: "column" }}>
+            {/* Floating Prev Button */}
+            <button 
+              onClick={prevPage}
+              onMouseEnter={() => setHoverPrev(true)}
+              onMouseLeave={() => setHoverPrev(false)}
+              style={{
+                ...sideBtnStyle,
+                left: 15, 
+                opacity: hoverPrev ? 1 : 0.3,
+              }}  
+            >
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <polyline points="15 18 9 12 15 6"></polyline>
+              </svg>
+            </button>
+
+            {/* THE ACTUAL BOOK TEXT AREA */}
+            <div 
+              ref={viewerRef} 
+              style={{ 
+                ...styles.viewer, 
+                background: THEME.canvas, 
+                borderLeft: `6px solid ${THEME.frame}`,
+                flex: 1 
+              }} 
+            />
+
+            {/* Floating Next Button */}
+            <button 
+              onClick={nextPage}
+              onMouseEnter={() => setHoverNext(true)}
+              onMouseLeave={() => setHoverNext(false)}
+              style={{
+                ...sideBtnStyle,
+                right: 15,
+                opacity: hoverNext ? 1 : 0.3,
+              }}
+            >
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <polyline points="9 18 15 12 9 6"></polyline>
+              </svg>
+            </button>
+          </div>
         </div>
 
         {/* RIGHT: Sidebar */}
@@ -924,6 +962,7 @@ const isGutenberg = (url) =>
 }
 
 const styles = {
+  
   page: {
     fontFamily: FONTS.ui,
     padding: 20,
@@ -978,6 +1017,9 @@ const styles = {
     overflow: "hidden",
     background: COLORS.white,
     boxShadow: "0 10px 24px rgba(18,38,48,0.08)",
+    display: "flex",        // Add this
+    flexDirection: "column", // Add this
+    minHeight: "80vh",      // Add this to give it vertical room
   },
 
   readerTopBar: {
@@ -1065,4 +1107,5 @@ const styles = {
     cursor: "pointer",
     fontWeight: 500,
   },
+  
 };
