@@ -40,6 +40,8 @@ export default function Reader({ darkMode, setDarkMode }) {
 
   const [status, setStatus] = useState("Upload an EPUB and an MP3 to begin.");
   const [epubFile, setEpubFile] = useState(null); // local fallback
+  const [audioTracks, setAudioTracks] = useState([]);
+  const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
 
   const [audioFile, setAudioFile] = useState(null); // local fallback
   const [audioUrl, setAudioUrl] = useState(null); // can be local object URL OR remote URL
@@ -112,6 +114,7 @@ export default function Reader({ darkMode, setDarkMode }) {
 
   // ---------------- Load book from Firestore when route has bookId ----------------
   useEffect(() => {
+    
     if (!user || !bookId) return;
 
     let cancelled = false;
@@ -140,18 +143,48 @@ export default function Reader({ darkMode, setDarkMode }) {
           if (!cancelled) setEpubUrl(null);
         }
 
-        // AUDIO resolve (note: LibriVox zip won't play in <audio>)
-        if (data.audio_storage_path) {
-          const url = await getDownloadURL(ref(storage, data.audio_storage_path));
-          if (!cancelled) setAudioUrl(url);
-        } else if (data.audio_link) {
-          // This might be a ZIP; we still set it so "Preview Audio" can exist elsewhere,
-          // but playback may fail unless it's a direct audio file.
-          if (!cancelled) setAudioUrl(data.audio_link);
+        // AUDIO resolve
+        if (data.generated_audio_tracks && data.generated_audio_tracks.length > 0) {
+            const resolvedTracks = [];
+        
+            for (const track of data.generated_audio_tracks) {
+            const url = await getDownloadURL(ref(storage, track.storage_path));
+            resolvedTracks.push({
+                ...track,
+                url
+            });
+            }
+        
+            if (!cancelled) {
+            setAudioTracks(resolvedTracks);
+            setCurrentTrackIndex(0);
+            setAudioUrl(resolvedTracks[0]?.url || null);
+            }
+        
+        } else if (data.librivox_audio_tracks && data.librivox_audio_tracks.length > 0) {
+            const resolvedTracks = [];
+        
+            for (const track of data.librivox_audio_tracks) {
+            const url = await getDownloadURL(ref(storage, track.storage_path));
+            resolvedTracks.push({
+                ...track,
+                url
+            });
+            }
+        
+            if (!cancelled) {
+            setAudioTracks(resolvedTracks);
+            setCurrentTrackIndex(0);
+            setAudioUrl(resolvedTracks[0]?.url || null);
+            }
+        
+        } else if (data.audio_storage_path) {
+            const url = await getDownloadURL(ref(storage, data.audio_storage_path));
+            if (!cancelled) setAudioUrl(url);
+        
         } else {
-          if (!cancelled) setAudioUrl(null);
+            if (!cancelled) setAudioUrl(null);
         }
-
         setStatus("Book loaded. Rendering EPUB…");
       } catch (e) {
         console.error("[Reader] loadBook failed:", e);
@@ -176,11 +209,18 @@ export default function Reader({ darkMode, setDarkMode }) {
   useEffect(() => {
     const a = audioRef.current;
     if (!a) return;
-
-    const onTime = () => setCurrentTime(a.currentTime || 0);
-    a.addEventListener("timeupdate", onTime);
-    return () => a.removeEventListener("timeupdate", onTime);
-  }, []);
+  
+    const onEnded = () => {
+      if (currentTrackIndex + 1 < audioTracks.length) {
+        const next = currentTrackIndex + 1;
+        setCurrentTrackIndex(next);
+        setAudioUrl(audioTracks[next].url);
+      }
+    };
+  
+    a.addEventListener("ended", onEnded);
+    return () => a.removeEventListener("ended", onEnded);
+  }, [audioTracks, currentTrackIndex]);
 
   const mmss = useMemo(() => {
     const s = Math.floor(currentTime);
@@ -463,7 +503,7 @@ const isGutenberg = (url) =>
       console.error("[Bookcover/EPUB] prev error:", e);
     }
   };
-
+  
   const goToToc = async (href) => {
     if (!href) return;
     try {
@@ -891,24 +931,68 @@ const isGutenberg = (url) =>
 
         {/* RIGHT: Sidebar */}
         <div style={styles.sidebarCard}>
-          <h2 style={styles.h2}>Audio</h2>
+            <h2 style={styles.h2}>Audio</h2>
 
-          <input
+            {audioTracks.length > 0 && (
+            <select
+                value={currentTrackIndex}
+                onChange={(e) => {
+                const idx = Number(e.target.value);
+                setCurrentTrackIndex(idx);
+                setAudioUrl(audioTracks[idx].url);
+                }}
+                style={{
+                width: "100%",
+                marginBottom: 10,
+                padding: 8,
+                borderRadius: 10
+                }}
+            >
+                {audioTracks.map((track, idx) => (
+                <option key={track.index} value={idx}>
+                    Chapter {track.index}
+                </option>
+                ))}
+            </select>
+            )}
+
+            <input
             type="file"
             accept="audio/*"
             onChange={(e) => setAudioFile(e.target.files?.[0] || null)}
             style={{
-              marginBottom: 10,
-              color: "#fff",
+                marginBottom: 10,
+                color: "#fff",
             }}
-          />
-
-          <audio
+            />
+            {audioTracks.length > 0 && (
+                <select
+                    value={currentTrackIndex}
+                    onChange={(e) => {
+                    const idx = Number(e.target.value);
+                    setCurrentTrackIndex(idx);
+                    setAudioUrl(audioTracks[idx].url);
+                    }}
+                    style={{
+                    width: "100%",
+                    marginBottom: 10,
+                    padding: 8,
+                    borderRadius: 10
+                    }}
+                >
+                    {audioTracks.map((track, idx) => (
+                    <option key={track.index} value={idx}>
+                        {track.title || `Chapter ${track.index}`}
+                    </option>
+                    ))}
+                </select>
+                )}
+            <audio
             ref={audioRef}
             controls
             src={audioUrl || undefined}
             style={{ width: "100%" }}
-          />
+            />
 
           <div
             style={{
@@ -924,7 +1008,6 @@ const isGutenberg = (url) =>
               <b>Current time:</b> {mmss}
             </div>
             <div style={{ marginTop: 6, fontSize: 13, color: "rgba(255,255,255,0.8)" }}>
-              Note: LibriVox links are often ZIPs and won’t play in-browser unless extracted to an MP3.
             </div>
           </div>
 
