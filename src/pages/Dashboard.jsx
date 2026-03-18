@@ -1015,6 +1015,11 @@ function BookTile({ book, onEdit, onDelete, onGenerateAudiobook, onPrepareLibriv
       background: "rgba(127,29,29,0.82)",
       border: "1px solid rgba(254,202,202,0.35)",
     };
+    const [hoveredBtn, setHoveredBtn] = useState(null);
+    const hoverStyle = (id) => ({
+      transform: hoveredBtn === id ? "translateY(-3px)" : "translateY(0)",
+      boxShadow: hoveredBtn === id ? "0 8px 20px rgba(26, 75, 93, 0.4)" : "none",
+    });
   
     const confirmOpen = (label, url) => {
       if (!url) return;
@@ -1120,7 +1125,9 @@ function BookTile({ book, onEdit, onDelete, onGenerateAudiobook, onPrepareLibriv
               }}
             >
               <button
-                style={actionButtonStyle}
+                style={{ ...actionButtonStyle, ...hoverStyle("read"), transition: "all 0.2s ease" }}
+                onMouseEnter={() => setHoveredBtn("read")}
+                onMouseLeave={() => setHoveredBtn(null)}
                 onClick={() => navigate(`/reader/${book.id}`)}
               >
                 Read
@@ -1128,7 +1135,9 @@ function BookTile({ book, onEdit, onDelete, onGenerateAudiobook, onPrepareLibriv
   
               {hasEpub && (
                 <button
-                  style={actionButtonStyle}
+                  style={{ ...actionButtonStyle, ...hoverStyle("epub"), transition: "all 0.2s ease" }}
+                  onMouseEnter={() => setHoveredBtn("epub")}
+                  onMouseLeave={() => setHoveredBtn(null)}
                   onClick={() => confirmOpen("EPUB", book.epub_link)}
                 >
                   EPUB
@@ -1137,33 +1146,51 @@ function BookTile({ book, onEdit, onDelete, onGenerateAudiobook, onPrepareLibriv
   
               {(hasAudio || hasGeneratedAudio) && (
                 <button
-                  style={actionButtonStyle}
+                  style={{ ...actionButtonStyle, ...hoverStyle("listen"), transition: "all 0.2s ease" }}
+                  onMouseEnter={() => setHoveredBtn("listen")}
+                  onMouseLeave={() => setHoveredBtn(null)}
                   onClick={() => navigate(`/reader/${book.id}`)}
                 >
                   Listen
                 </button>
               )}
   
-              <button style={actionButtonStyle} onClick={() => onEdit(book)}>
+              <button
+                style={{ ...actionButtonStyle, ...hoverStyle("edit"), transition: "all 0.2s ease" }}
+                onMouseEnter={() => setHoveredBtn("edit")}
+                onMouseLeave={() => setHoveredBtn(null)}
+                onClick={() => onEdit(book)}
+              >
                 Edit
               </button>
   
-              <button style={deleteButtonStyle} onClick={() => onDelete(book)}>
+              <button
+                style={{ ...deleteButtonStyle, ...hoverStyle("delete"), transition: "all 0.2s ease" }}
+                onMouseEnter={() => setHoveredBtn("delete")}
+                onMouseLeave={() => setHoveredBtn(null)}
+                onClick={() => onDelete(book)}
+              >
                 Delete
               </button>
   
               <button
                 style={{
                   ...actionButtonStyle,
+                  ...hoverStyle("generate"),
                   opacity: isGenerating ? 0.65 : 1,
-                  cursor: isGenerating ? "not-allowed" : "pointer"
+                  cursor: isGenerating ? "not-allowed" : "pointer",
+                  transition: "all 0.2s ease",
                 }}
+                onMouseEnter={() => !isGenerating && setHoveredBtn("generate")}
+                onMouseLeave={() => setHoveredBtn(null)}
                 onClick={() => !isGenerating && onGenerateAudiobook(book.id)}
               >
                 {isGenerating ? "Generating..." : isReady ? "Regenerate Audio" : "Generate Audiobook"}
               </button>
               <button
-                style={actionButtonStyle}
+                style={{ ...actionButtonStyle, ...hoverStyle("librivox"), transition: "all 0.2s ease" }}
+                onMouseEnter={() => setHoveredBtn("librivox")}
+                onMouseLeave={() => setHoveredBtn(null)}
                 onClick={() => onPrepareLibrivoxAudio(book.id)}
                 >
                 Prepare LibriVox Audio

@@ -32,6 +32,9 @@ export default function Reader({ darkMode, setDarkMode }) {
   const bookRef = useRef(null);
   const renditionRef = useRef(null);
   const audioRef = useRef(null);
+  const allSpinePageCountsRef = useRef({});
+
+  const [bookTotalPages, setBookTotalPages] = useState(0);
 
   const [user, setUser] = useState(null);
   const [status, setStatus] = useState("Upload an EPUB and an MP3 to begin.");
@@ -64,6 +67,8 @@ export default function Reader({ darkMode, setDarkMode }) {
   const [hoverSinglePage, setHoverSinglePage] = useState(false);
   const [hoverDoublePage, setHoverDoublePage] = useState(false);
   const [isLogoutHovered, setIsLogoutHovered] = useState(false);
+  const [locationsReady, setLocationsReady] = useState(false);
+
 
   const THEME = darkMode
     ? {
@@ -404,6 +409,11 @@ export default function Reader({ darkMode, setDarkMode }) {
 
         if (cancelled) return;
 
+        await book.ready;
+        // generate locations for book-wide progress (1 location per ~1000 chars)
+        book.locations.generate(1000).then(() => {
+          setLocationsReady(true);
+        });
         const rendition = book.renderTo(el, {
           width: '100%',
           height: "100%",
@@ -441,20 +451,32 @@ export default function Reader({ darkMode, setDarkMode }) {
         applyTheme(rendition);
 
         rendition.on("relocated", (location) => {
-          const pct = location?.start?.percentage;
-          if (typeof pct === "number" && !isNaN(pct)) {
-            setProgress(Math.round(pct * 100));
-          }
+          const page = location?.start?.displayed?.page;
+          const spineIndex = location?.start?.index ?? 0;
 
-          if (location?.start?.displayed?.page) {
-            setCurrentPage(location.start.displayed.page);
+          const spineItems = bookRef.current?.spine?.items || [];
+          let offset = 0;
+          for (let i = 0; i < spineIndex; i++) {
+            offset += allSpinePageCountsRef.current[i] || 0;
           }
+          const globalPage = offset + (page || 0);
+          setCurrentPage(globalPage);
 
-          if (location?.start?.displayed?.total) {
-            setTotalPages(location.start.displayed.total);
+          const grandTotal = spineItems.reduce(
+            (sum, _, i) => sum + (allSpinePageCountsRef.current[i] || 0), 0
+          );
+          if (grandTotal > 0) {
+            setTotalPages(grandTotal);
+            setProgress(Math.round((globalPage / grandTotal) * 100));
+          } else {
+            const cfi = location?.start?.cfi;
+            if (cfi && bookRef.current?.locations?.percentageFromCfi) {
+              try {
+                const pct = bookRef.current.locations.percentageFromCfi(cfi);
+                if (typeof pct === "number" && !isNaN(pct)) setProgress(Math.round(pct * 100));
+              } catch {}
+            }
           }
-
-          // forceVisibleContents();
         });
 
         try {
@@ -466,6 +488,35 @@ export default function Reader({ darkMode, setDarkMode }) {
 
         await displayFirstWorkingSpineItem(book, rendition);
         forceVisibleContents();
+
+        // Pre-calculate page counts for all spine items
+        setStatus("Counting pages…");
+        const spineItems = book?.spine?.items || [];
+        const savedLocation = renditionRef.current?.currentLocation?.();
+
+        for (let i = 0; i < spineItems.length; i++) {
+          const href = spineItems[i]?.href;
+          if (!href) continue;
+          try {
+            await rendition.display(href);
+            const loc = renditionRef.current?.currentLocation?.();
+            const total = loc?.start?.displayed?.total;
+            if (total) allSpinePageCountsRef.current[i] = total;
+          } catch {}
+        }
+
+        // Restore original position
+        if (savedLocation?.start?.cfi) {
+          await rendition.display(savedLocation.start.cfi);
+        } else {
+          await displayFirstWorkingSpineItem(book, rendition);
+        }
+        forceVisibleContents();
+
+        const grandTotal = spineItems.reduce(
+          (sum, _, i) => sum + (allSpinePageCountsRef.current[i] || 0), 0
+        );
+        setBookTotalPages(grandTotal);
 
         const contents = rendition.getContents?.() || [];
         console.log(
@@ -759,9 +810,9 @@ export default function Reader({ darkMode, setDarkMode }) {
             >
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
                 <span>
-                  <b>Page</b> {currentPage}
-                  {totalPages > 0 ? ` / ${totalPages}` : ""}
+                  <b>Page</b> {currentPage} / {bookTotalPages > 0 ? bookTotalPages : "…"}
                 </span>
+
                 <span>
                   <b>{progress}%</b>
                 </span>
