@@ -33,6 +33,7 @@ export default function Reader({ darkMode, setDarkMode }) {
   const renditionRef = useRef(null);
   const audioRef = useRef(null);
   const allSpinePageCountsRef = useRef({});
+  const isCountingRef = useRef(false);
 
   const [bookTotalPages, setBookTotalPages] = useState(0);
 
@@ -68,6 +69,8 @@ export default function Reader({ darkMode, setDarkMode }) {
   const [hoverDoublePage, setHoverDoublePage] = useState(false);
   const [isLogoutHovered, setIsLogoutHovered] = useState(false);
   const [locationsReady, setLocationsReady] = useState(false);
+
+  const [isCountingPages, setIsCountingPages] = useState(false);
 
 
   const THEME = darkMode
@@ -297,13 +300,14 @@ export default function Reader({ darkMode, setDarkMode }) {
         const body = doc.body;
         if (!body) return;
   
-        html.style.background = darkMode ? "#1a1a2e" : "#ffffff";
+        html.style.background = darkMode ? "#1a1a2e" : COLORS.canvas;
         html.style.color = darkMode ? "#e8e8f0" : "#122630";
   
-        body.style.background = darkMode ? "#1a1a2e" : "#ffffff";
+        body.style.background = darkMode ? "#1a1a2e" : COLORS.canvas;
         body.style.color = darkMode ? "#e8e8f0" : "#122630";
         body.style.fontFamily = '"Libre Baskerville", Georgia, serif';
         body.style.lineHeight = "1.7";
+        body.style.fontSize = `${fontSize}%`;
   
         // IMPORTANT: do not constrain width in paginated mode
         body.style.margin = "0";
@@ -322,6 +326,7 @@ export default function Reader({ darkMode, setDarkMode }) {
           el.style.visibility = "visible";
           el.style.textIndent = "0";
           el.style.maxWidth = "none";
+          el.style.fontSize = "";
         });
       } catch (e) {
         console.warn("forceVisibleContents failed:", e);
@@ -332,18 +337,22 @@ export default function Reader({ darkMode, setDarkMode }) {
   const applyTheme = (renditionInstance) => {
     renditionInstance.themes.default({
       body: {
-        background: darkMode ? "#1a1a2e" : "#ffffff",
+        background: darkMode ? "#1a1a2e" : COLORS.canvas,
         color: darkMode ? "#e8e8f0" : "#122630",
         "font-family": '"Libre Baskerville", Georgia, serif',
+        "font-size": `${fontSize}%`,
         "line-height": "1.7",
         margin: "0",
         padding: "24px",
       },
       p: {
         "line-height": "1.7",
+        "font-size": "1em",
       },
+      div: { "font-size": "1em" },
+      span: { "font-size": "1em" },
     });
-  
+
     renditionInstance.themes.fontSize(`${fontSize}%`);
   };
 
@@ -432,10 +441,10 @@ export default function Reader({ darkMode, setDarkMode }) {
               const body = doc.body;
               if (!body) return;
           
-              html.style.background = darkMode ? "#1a1a2e" : "#ffffff";
+              html.style.background = darkMode ? "#1a1a2e" : COLORS.canvas;
               html.style.color = darkMode ? "#e8e8f0" : "#122630";
           
-              body.style.background = darkMode ? "#1a1a2e" : "#ffffff";
+              body.style.background = darkMode ? "#1a1a2e" : COLORS.canvas;
               body.style.color = darkMode ? "#e8e8f0" : "#122630";
               body.style.fontFamily = '"Libre Baskerville", Georgia, serif';
               body.style.lineHeight = "1.7";
@@ -451,6 +460,7 @@ export default function Reader({ darkMode, setDarkMode }) {
         applyTheme(rendition);
 
         rendition.on("relocated", (location) => {
+          if (isCountingRef.current) return;
           const page = location?.start?.displayed?.page;
           const spineIndex = location?.start?.index ?? 0;
 
@@ -489,29 +499,36 @@ export default function Reader({ darkMode, setDarkMode }) {
         await displayFirstWorkingSpineItem(book, rendition);
         forceVisibleContents();
 
-        // Pre-calculate page counts for all spine items
-        setStatus("Counting pages…");
         const spineItems = book?.spine?.items || [];
-        const savedLocation = renditionRef.current?.currentLocation?.();
+        const alreadyCounted = Object.keys(allSpinePageCountsRef.current).length > 0;
 
-        for (let i = 0; i < spineItems.length; i++) {
-          const href = spineItems[i]?.href;
-          if (!href) continue;
-          try {
-            await rendition.display(href);
-            const loc = renditionRef.current?.currentLocation?.();
-            const total = loc?.start?.displayed?.total;
-            if (total) allSpinePageCountsRef.current[i] = total;
-          } catch {}
-        }
+        if (!alreadyCounted) {
+          setStatus("Counting pages…");
+          setIsCountingPages(true);
+          isCountingRef.current = true;
+          const savedLocation = renditionRef.current?.currentLocation?.();
 
-        // Restore original position
-        if (savedLocation?.start?.cfi) {
-          await rendition.display(savedLocation.start.cfi);
-        } else {
-          await displayFirstWorkingSpineItem(book, rendition);
+          for (let i = 0; i < spineItems.length; i++) {
+            const href = spineItems[i]?.href;
+            if (!href) continue;
+            try {
+              await rendition.display(href);
+              const loc = renditionRef.current?.currentLocation?.();
+              const total = loc?.start?.displayed?.total;
+              if (total) allSpinePageCountsRef.current[i] = total;
+            } catch {}
+          }
+
+          // Restore original position
+          if (savedLocation?.start?.cfi) {
+            await rendition.display(savedLocation.start.cfi);
+          } else {
+            await displayFirstWorkingSpineItem(book, rendition);
+          }
+          forceVisibleContents();
+          isCountingRef.current = false;
+          setIsCountingPages(false);
         }
-        forceVisibleContents();
 
         const grandTotal = spineItems.reduce(
           (sum, _, i) => sum + (allSpinePageCountsRef.current[i] || 0), 0
@@ -535,12 +552,21 @@ export default function Reader({ darkMode, setDarkMode }) {
       cancelled = true;
       destroyReader();
     };
-  }, [epubFile, epubUrl, spread]);
+  }, [epubFile, epubUrl]);
+
+  useEffect(() => {
+    if (!renditionRef.current) return;
+    renditionRef.current.spread(spread);
+  }, [spread]);
 
   useEffect(() => {
     if (!renditionRef.current) return;
     applyTheme(renditionRef.current);
     forceVisibleContents();
+    
+    try {
+      renditionRef.current.spread(spread);
+    } catch {}
   }, [darkMode, fontSize]);
 
   const nextPage = async () => {
@@ -810,11 +836,13 @@ export default function Reader({ darkMode, setDarkMode }) {
             >
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
                 <span>
-                  <b>Page</b> {currentPage} / {bookTotalPages > 0 ? bookTotalPages : "…"}
+                  <b>Page</b>{" "}
+                  {isCountingPages
+                    ? "Loading…"
+                    : `${currentPage} / ${bookTotalPages > 0 ? bookTotalPages : "…"}`}
                 </span>
-
                 <span>
-                  <b>{progress}%</b>
+                  <b>{isCountingPages ? "—" : `${progress}%`}</b>
                 </span>
               </div>
               <div
@@ -828,10 +856,9 @@ export default function Reader({ darkMode, setDarkMode }) {
                 <div
                   style={{
                     height: "100%",
-                    width: `${progress}%`,
+                    width: isCountingPages ? "0%" : `${progress}%`,
                     background: darkMode ? COLORS.status : COLORS.frame,
                     borderRadius: 999,
-                    transition: "width 0.4s ease",
                   }}
                 />
               </div>
@@ -916,8 +943,17 @@ export default function Reader({ darkMode, setDarkMode }) {
               </button>
             </div>
 
-            <label style={{ ...styles.fileLabel, color: THEME.ink }}>
-              <span>Text (EPUB)</span>
+            <label style={{
+              ...styles.fileLabel,
+              color: THEME.ink,
+              background: darkMode ? "rgba(255,255,255,0.08)" : "rgba(18,38,48,0.06)",
+              border: darkMode ? "1px solid rgba(242,201,76,0.25)" : `1px solid ${COLORS.border}`,
+              borderRadius: 12,
+              borderRadius: 8,
+              padding: 3,
+              gap: 4,
+            }}>
+              <span style={{ padding: "6px 10px" }}>Text (EPUB)</span>
               <input
                 type="file"
                 accept=".epub"
@@ -934,7 +970,7 @@ export default function Reader({ darkMode, setDarkMode }) {
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                padding: "24px 72px",
+                padding: "0", //"24px 72px",
                 boxSizing: "border-box",
             }}>
             <button
@@ -952,17 +988,39 @@ export default function Reader({ darkMode, setDarkMode }) {
               </svg>
             </button>
 
-            <div
-              ref={viewerRef}
-              style={{
-                ...styles.viewer,
-                background: THEME.canvas,
-                borderTop: `1px solid ${THEME.border}`,
-                borderRight: `1px solid ${THEME.border}`,
-                borderBottom: `1px solid ${THEME.border}`,
-                borderLeft: `6px solid ${THEME.frame}`,
-              }}
-            />
+            <div style={{ position: "relative", width: "100%", maxWidth: "100%" }}>
+              <div
+                ref={viewerRef}
+                style={{
+                  ...styles.viewer,
+                  background: THEME.canvas,
+                  //borderTop: `1px solid ${THEME.border}`,
+                  //borderRight: `1px solid ${THEME.border}`,
+                  //borderBottom: `1px solid ${THEME.border}`,
+                  borderLeft: `6px solid ${THEME.frame}`,
+                  visibility: isCountingPages ? "hidden" : "visible",
+                }}
+              />
+              {isCountingPages && (
+                <div style={{
+                  position: "absolute",
+                  inset: 0,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  background: THEME.canvas,
+                  borderRadius: 16,
+                  border: `1px solid ${THEME.border}`,
+                  borderLeft: `6px solid ${THEME.frame}`,
+                  fontSize: 18,
+                  fontFamily: FONTS.ui,
+                  color: THEME.mutedInk,
+                  fontWeight: 500,
+                }}>
+                  Loading Pages…
+                </div>
+              )}
+            </div>
 
             <button
               onClick={nextPage}
@@ -1090,7 +1148,7 @@ const styles = {
     border: `1px solid ${COLORS.border}`,
     borderRadius: 20,
     overflow: "hidden",
-    background: COLORS.white,
+    background: COLORS.canvas,
     boxShadow: "0 10px 24px rgba(18,38,48,0.08)",
     display: "flex",
     flexDirection: "column",
@@ -1137,14 +1195,14 @@ const styles = {
   },
   viewer: {
     width: "100%",
-    maxWidth: "1100px",
-    height: "72vh",
-    margin: "0 auto",
+    maxWidth: "100%", //"1100px",
+    height: "82vh", //"72vh",
+    margin: "0",
     overflow: "hidden",
-    background: "#ffffff",
+    background: COLORS.canvas,
     fontFamily: '"Libre Baskerville", Georgia, serif',
-    borderRadius: 16,
-    boxShadow: "0 12px 28px rgba(18,38,48,0.12)",
+    borderRadius: "0 0 20px 20px", //16,
+    boxShadow: "none", //"0 12px 28px rgba(18,38,48,0.12)",
   },
   sidebarCard: {
     border: "none",
