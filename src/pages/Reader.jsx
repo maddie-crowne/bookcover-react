@@ -844,7 +844,7 @@ export default function Reader({ darkMode, setDarkMode }) {
                 }}
                 title="Single page"
               >
-                Single
+                <svg width="18" height="18" viewBox="0 0 18 18" fill="none"> <rect x="4" y="2" width="10" height="14" rx="1.5" fill={spread === "none" ? (darkMode ? COLORS.ink : COLORS.white) : (darkMode ? "#e8e8f0" : COLORS.ink)} /> </svg>
               </button>
 
               <button
@@ -861,7 +861,7 @@ export default function Reader({ darkMode, setDarkMode }) {
                 }}
                 title="Two pages"
               >
-                Double
+                <svg width="22" height="18" viewBox="0 0 22 18" fill="none"> <rect x="1" y="2" width="9" height="14" rx="1.5" fill={spread === "always" ? (darkMode ? COLORS.ink : COLORS.white) : (darkMode ? "#e8e8f0" : COLORS.ink)} /> <rect x="12" y="2" width="9" height="14" rx="1.5" fill={spread === "always" ? (darkMode ? COLORS.ink : COLORS.white) : (darkMode ? "#e8e8f0" : COLORS.ink)} /> </svg>
               </button>
             </div>
 
