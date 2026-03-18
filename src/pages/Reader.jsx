@@ -309,7 +309,7 @@ export default function Reader({ darkMode, setDarkMode }) {
         body.style.lineHeight = "1.7";
         body.style.fontSize = `${fontSize}%`;
   
-        // IMPORTANT: do not constrain width in paginated mode
+        
         body.style.margin = "0";
         body.style.padding = "24px";
         body.style.maxWidth = "none";
@@ -419,7 +419,7 @@ export default function Reader({ darkMode, setDarkMode }) {
         if (cancelled) return;
 
         await book.ready;
-        // generate locations for book-wide progress (1 location per ~1000 chars)
+        // generate locations for book-wide progress 
         book.locations.generate(1000).then(() => {
           setLocationsReady(true);
         });
