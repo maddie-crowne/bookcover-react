@@ -9,6 +9,7 @@ import Dashboard from "./Dashboard";
 
 import { onAuthStateChanged } from "firebase/auth";
 import { saveBookForUser } from "../services/saveBook";
+
 const COLORS = {
   canvas: "#F9EAEA",
   ink: "#122630",
@@ -20,6 +21,7 @@ const COLORS = {
   border: "rgba(18, 38, 48, 0.12)",
   mutedInk: "rgba(18, 38, 48, 0.72)",
 };
+
 const FONTS = {
   headings: '"Merriweather", serif',
   ui: '"Inter", sans-serif',
@@ -34,23 +36,21 @@ export default function Reader() {
   const renditionRef = useRef(null);
   const audioRef = useRef(null);
 
-  const [page, setPage] = useState("reader"); // "reader" | "bookshelf"
+  const [page, setPage] = useState("reader");
   const [user, setUser] = useState(null);
 
   const [status, setStatus] = useState("Upload an EPUB and an MP3 to begin.");
-  const [epubFile, setEpubFile] = useState(null); // local fallback
+  const [epubFile, setEpubFile] = useState(null);
 
-  const [audioFile, setAudioFile] = useState(null); // local fallback
-  const [audioUrl, setAudioUrl] = useState(null); // can be local object URL OR remote URL
+  const [audioFile, setAudioFile] = useState(null);
+  const [audioUrl, setAudioUrl] = useState(null);
   const [currentTime, setCurrentTime] = useState(0);
 
   const [toc, setToc] = useState([]);
   const [progress, setProgress] = useState(0);
 
   const [remoteBook, setRemoteBook] = useState(null);
-  const [epubUrl, setEpubUrl] = useState(null); // remote epub URL (storage or external)
-
-  const log = (...args) => console.log("[Bookcover/EPUB]", ...args);
+  const [epubUrl, setEpubUrl] = useState(null);
 
   const [hoverPrev, setHoverPrev] = useState(false);
   const [hoverNext, setHoverNext] = useState(false);
@@ -59,29 +59,40 @@ export default function Reader() {
 
   const [currentPage, setCurrentPage] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
-  
-  const [fontSize, setFontSize] = useState(100); 
-  const [spread, setSpread] = useState("none");
 
+  const [fontSize, setFontSize] = useState(100);
+  const [spread, setSpread] = useState("none");
   const [darkMode, setDarkMode] = useState(false);
-  const THEME = darkMode ? {
-    canvas: "#1a1a2e",
-    ink: "#e8e8f0",
-    frame: "#4a9eba",
-    mutedInk: "rgba(232,232,240,0.65)",
-    white: "#16213e",
-    border: "rgba(232,232,240,0.12)",
-    sidebarBg: "#0f3460",
-  } : {
-    canvas: COLORS.canvas,
-    ink: COLORS.ink,
-    frame: COLORS.frame,
-    mutedInk: COLORS.mutedInk,
-    white: COLORS.white,
-    border: COLORS.border,
-    sidebarBg: COLORS.frame,
-  };
-  
+
+  // Sync state
+  const [syncFile, setSyncFile] = useState(null);
+  const [syncData, setSyncData] = useState([]);
+  const [activeSyncIndex, setActiveSyncIndex] = useState(-1);
+
+  const THEME = darkMode
+    ? {
+        canvas: "#1a1a2e",
+        ink: "#e8e8f0",
+        frame: "#4a9eba",
+        mutedInk: "rgba(232,232,240,0.65)",
+        white: "#16213e",
+        border: "rgba(232,232,240,0.12)",
+        sidebarBg: "#0f3460",
+        highlight: "rgba(242, 201, 76, 0.35)",
+      }
+    : {
+        canvas: COLORS.canvas,
+        ink: COLORS.ink,
+        frame: COLORS.frame,
+        mutedInk: COLORS.mutedInk,
+        white: COLORS.white,
+        border: COLORS.border,
+        sidebarBg: COLORS.frame,
+        highlight: "rgba(242, 201, 76, 0.45)",
+      };
+
+  const log = (...args) => console.log("[Bookcover/EPUB]", ...args);
+
   // ---------------- Auth ----------------
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => setUser(u));
@@ -108,7 +119,6 @@ export default function Reader() {
 
         setRemoteBook(data);
 
-        // EPUB resolve
         if (data.epub_storage_path) {
           const url = await getDownloadURL(ref(storage, data.epub_storage_path));
           if (!cancelled) setEpubUrl(url);
@@ -118,13 +128,10 @@ export default function Reader() {
           if (!cancelled) setEpubUrl(null);
         }
 
-        // AUDIO resolve (note: LibriVox zip won't play in <audio>)
         if (data.audio_storage_path) {
           const url = await getDownloadURL(ref(storage, data.audio_storage_path));
           if (!cancelled) setAudioUrl(url);
         } else if (data.audio_link) {
-          // This might be a ZIP; we still set it so "Preview Audio" can exist elsewhere,
-          // but playback may fail unless it's a direct audio file.
           if (!cancelled) setAudioUrl(data.audio_link);
         } else {
           if (!cancelled) setAudioUrl(null);
@@ -160,6 +167,33 @@ export default function Reader() {
     return () => a.removeEventListener("timeupdate", onTime);
   }, []);
 
+  // ---------------- Load local sync JSON ----------------
+  useEffect(() => {
+    if (!syncFile) {
+      setSyncData([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const text = await syncFile.text();
+        const parsed = JSON.parse(text);
+        if (!cancelled) {
+          setSyncData(Array.isArray(parsed) ? parsed : []);
+        }
+      } catch (e) {
+        console.error("[Bookcover/Sync] Failed to parse sync JSON:", e);
+        if (!cancelled) setSyncData([]);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [syncFile]);
+
   const mmss = useMemo(() => {
     const s = Math.floor(currentTime);
     const m = Math.floor(s / 60);
@@ -167,7 +201,29 @@ export default function Reader() {
     return `${m}:${String(r).padStart(2, "0")}`;
   }, [currentTime]);
 
-  // ---------------- Save to Firestore (prototype) ----------------
+  const activeSyncItem =
+    activeSyncIndex >= 0 && activeSyncIndex < syncData.length
+      ? syncData[activeSyncIndex]
+      : null;
+
+  // ---------------- Track active sentence from audio time ----------------
+  useEffect(() => {
+    if (!Array.isArray(syncData) || syncData.length === 0) {
+      setActiveSyncIndex(-1);
+      return;
+    }
+
+    const idx = syncData.findIndex((item) => {
+      if (typeof item?.start !== "number" || typeof item?.end !== "number") {
+        return false;
+      }
+      return currentTime >= item.start && currentTime < item.end;
+    });
+
+    setActiveSyncIndex(idx);
+  }, [currentTime, syncData]);
+
+  // ---------------- Save to Firestore ----------------
   const saveCurrentBook = async () => {
     if (!user) {
       alert("Please log in first.");
@@ -199,6 +255,88 @@ export default function Reader() {
     }
   };
 
+  // ---------------- Highlight helpers ----------------
+  const escapeRegExp = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+  const normalizeForMatch = (text) =>
+    (text || "")
+      .replace(/\s+/g, " ")
+      .replace(/[“”]/g, '"')
+      .replace(/[‘’]/g, "'")
+      .trim()
+      .toLowerCase();
+
+  const clearHighlights = () => {
+    const contents = renditionRef.current?.getContents?.() || [];
+
+    contents.forEach((content) => {
+      try {
+        const doc = content.document;
+        const oldMarks = doc.querySelectorAll(".bookcover-sync-block-highlight");
+
+        oldMarks.forEach((el) => {
+          el.classList.remove("bookcover-sync-block-highlight");
+          el.style.background = "";
+          el.style.borderRadius = "";
+          el.style.boxShadow = "";
+          el.style.transition = "";
+        });
+      } catch (e) {
+        console.error("[Bookcover/Sync] clearHighlights error:", e);
+      }
+    });
+  };
+
+  const highlightActiveSentenceInView = (sentence) => {
+    if (!sentence || !renditionRef.current) return;
+
+    const target = normalizeForMatch(sentence);
+    if (!target) return;
+
+    clearHighlights();
+
+    const contents = renditionRef.current.getContents?.() || [];
+
+    for (const content of contents) {
+      try {
+        const doc = content.document;
+
+        const candidates = doc.querySelectorAll("p, div, li, blockquote");
+
+        for (const el of candidates) {
+          const text = normalizeForMatch(el.textContent);
+          if (!text) continue;
+
+          const firstWords = target.split(" ").slice(0, 6).join(" ");
+          const strongMatch =
+            text.includes(target) ||
+            target.includes(text) ||
+            (firstWords.length > 20 && text.includes(firstWords));
+
+          if (strongMatch) {
+            el.classList.add("bookcover-sync-block-highlight");
+            el.style.background = THEME.highlight;
+            el.style.borderRadius = "6px";
+            el.style.boxShadow = `0 0 0 2px ${THEME.highlight}`;
+            el.style.transition = "all 0.2s ease";
+            return;
+          }
+        }
+      } catch (e) {
+        console.error("[Bookcover/Sync] highlight error:", e);
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (!activeSyncItem?.sentence) {
+      clearHighlights();
+      return;
+    }
+
+    highlightActiveSentenceInView(activeSyncItem.sentence);
+  }, [activeSyncItem, darkMode]);
+
   // ---------------- EPUB helpers ----------------
   const destroyReader = () => {
     try {
@@ -218,6 +356,8 @@ export default function Reader() {
     if (viewerRef.current) viewerRef.current.innerHTML = "";
     setToc([]);
     setProgress(0);
+    setCurrentPage(0);
+    setTotalPages(0);
   };
 
   const displayFirstWorkingSpineItem = async (book, rendition) => {
@@ -263,27 +403,21 @@ export default function Reader() {
 
     throw lastErr || new Error("Failed to display any spine item.");
   };
-  
-const proxiedUrl = (url) => {
-  // url like: https://www.gutenberg.org/ebooks/64317.epub3.images
-  const u = new URL(url);
-  return `/gutenberg${u.pathname}${u.search}`;
-};
 
-const isGutenberg = (url) =>
+  const isGutenberg = (url) =>
     typeof url === "string" && url.includes("gutenberg.org");
-  
+
   const getEpubArrayBuffer = async () => {
     if (epubUrl) {
       const finalUrl = isGutenberg(epubUrl)
         ? `/epub-proxy?url=${encodeURIComponent(epubUrl)}`
         : epubUrl;
-  
+
       const res = await fetch(finalUrl);
       if (!res.ok) throw new Error(`Failed to fetch EPUB: ${res.status}`);
       return await res.arrayBuffer();
     }
-  
+
     if (epubFile) return await epubFile.arrayBuffer();
     return null;
   };
@@ -295,7 +429,6 @@ const isGutenberg = (url) =>
 
     destroyReader();
 
-    // If neither remote nor local exists, stop.
     if (!epubUrl && !epubFile) {
       setStatus("Upload an EPUB to begin, or open a book from your library.");
       return;
@@ -316,14 +449,15 @@ const isGutenberg = (url) =>
       await book.open(buf, "binary");
       await book.ready;
 
-      // Create rendition
       const rendition = book.renderTo(el, {
         width: "100%",
         height: "100%",
-        spread: spread,
+        spread,
         allowScriptedContent: true,
-      })
+      });
+
       renditionRef.current = rendition;
+
       rendition.themes.default({
         body: {
           "font-family": '"Libre Baskerville", Georgia, serif !important',
@@ -344,14 +478,18 @@ const isGutenberg = (url) =>
       });
 
       rendition.on("relocated", (location) => {
-        console.log("[relocated]", JSON.stringify(location, null, 2));
         const pct = location?.start?.percentage;
         if (typeof pct === "number" && !isNaN(pct)) {
           setProgress(Math.round(pct * 100));
         }
-        // Page numbers via epubjs locations
         if (location?.start?.location) {
           setCurrentPage(location.start.location);
+        }
+
+        if (activeSyncItem?.sentence) {
+          setTimeout(() => {
+            highlightActiveSentenceInView(activeSyncItem.sentence);
+          }, 100);
         }
       });
 
@@ -381,8 +519,7 @@ const isGutenberg = (url) =>
       cancelled = true;
       destroyReader();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [epubFile, epubUrl, darkMode]);
+  }, [epubFile, epubUrl, darkMode, spread]);
 
   useEffect(() => {
     if (!renditionRef.current) return;
@@ -394,30 +531,6 @@ const isGutenberg = (url) =>
     renditionRef.current.spread(spread);
   }, [spread]);
 
-  useEffect(() => {
-    if (!renditionRef.current) return;
-    renditionRef.current.themes.default({
-      body: {
-        "background-color": `${darkMode ? "#1a1a2e" : COLORS.canvas} !important`,
-        color: `${darkMode ? "#e8e8f0" : COLORS.ink} !important`,
-        "line-height": "1.7",
-        "font-family": '"Libre Baskerville", Georgia, serif !important',
-      },
-      p: { color: `${darkMode ? "#e8e8f0" : COLORS.ink} !important` },
-      span: { color: `${darkMode ? "#e8e8f0" : COLORS.ink} !important` },
-      div: { color: `${darkMode ? "#e8e8f0" : COLORS.ink} !important` },
-      h1: { color: `${darkMode ? "#e8e8f0" : COLORS.ink} !important` },
-      h2: { color: `${darkMode ? "#e8e8f0" : COLORS.ink} !important` },
-      h3: { color: `${darkMode ? "#e8e8f0" : COLORS.ink} !important` },
-      h4: { color: `${darkMode ? "#e8e8f0" : COLORS.ink} !important` },
-      a: { color: `${darkMode ? "#7ec8e3" : COLORS.frame} !important` },
-      "*": { color: `${darkMode ? "#e8e8f0" : COLORS.ink} !important` },
-    });
-    const loc = renditionRef.current.currentLocation();
-    if (loc?.start?.cfi) {
-      renditionRef.current.display(loc.start.cfi);
-    }
-  }, [darkMode]);
   // ---------------- Controls ----------------
   const nextPage = async () => {
     try {
@@ -444,12 +557,10 @@ const isGutenberg = (url) =>
     }
   };
 
-  // ---------------- Page switch ----------------
   if (page === "bookshelf") {
     return <Dashboard onBack={() => setPage("reader")} user={user} />;
   }
 
-  // ---------------- UI ----------------
   return (
     <div style={{ ...styles.page, background: THEME.canvas, color: THEME.ink }}>
       <button
@@ -458,22 +569,14 @@ const isGutenberg = (url) =>
         onMouseLeave={() => setHoverBookshelf(false)}
         style={{
           ...styles.bookshelfBtn,
-          // --- BRAND TYPOGRAPHY ---
-          fontFamily: FONTS.headings, 
+          fontFamily: FONTS.headings,
           fontWeight: "bold",
-
-          background: COLORS.frame, // Always Blue
-          color: COLORS.white,      // White text for contrast
-          
-          // --- HOVER TRANSFORM & COLOR ---
-          
+          background: COLORS.frame,
+          color: COLORS.white,
           transform: hoverBookshelf ? "translateY(-4px)" : "translateY(0)",
-          
-          // --- CORAL SHADOW ---
-          boxShadow: hoverBookshelf 
-            ? "0 10px 20px rgba(26, 75, 93, 0.45)" // Stronger Blue highlight on hover
+          boxShadow: hoverBookshelf
+            ? "0 10px 20px rgba(26, 75, 93, 0.45)"
             : "0 4px 14px rgba(18, 38, 48, 0.15)",
-            
           transition: "all 0.3s ease",
           border: "none",
           cursor: "pointer",
@@ -485,11 +588,11 @@ const isGutenberg = (url) =>
       </button>
 
       <button
-        onClick={() => setDarkMode(d => !d)}
+        onClick={() => setDarkMode((d) => !d)}
         style={{
           position: "fixed",
           top: 16,
-          right: 148,   // sits left of the My Bookshelf button
+          right: 148,
           padding: "10px 14px",
           borderRadius: 14,
           border: "none",
@@ -513,96 +616,131 @@ const isGutenberg = (url) =>
       </p>
 
       <div style={styles.grid}>
-        {/* LEFT: Reader */}
-        <div style={{ 
-          ...styles.readerCard, 
-          background: THEME.white, 
-          border: `1px solid ${THEME.border}` 
-        }}>
+        <div
+          style={{
+            ...styles.readerCard,
+            background: THEME.white,
+            border: `1px solid ${THEME.border}`,
+          }}
+        >
           <div style={{ ...styles.readerTopBar, background: THEME.canvas }}>
-            <button 
+            <button
               onClick={prevPage}
               onMouseEnter={() => setHoverPrev(true)}
               onMouseLeave={() => setHoverPrev(false)}
               style={{
                 ...styles.btn,
                 transform: hoverPrev ? "translateY(-3px)" : "translateY(0)",
-                boxShadow: hoverPrev ? "0 8px 20px rgba(230, 126, 126, 0.4)" : styles.btn.boxShadow,
-                transition: "all 0.2s ease"
-              }}  
+                boxShadow: hoverPrev
+                  ? "0 8px 20px rgba(230, 126, 126, 0.4)"
+                  : styles.btn.boxShadow,
+                transition: "all 0.2s ease",
+              }}
             >
               Prev
             </button>
-            <button 
+
+            <button
               onClick={nextPage}
               onMouseEnter={() => setHoverNext(true)}
               onMouseLeave={() => setHoverNext(false)}
               style={{
                 ...styles.btn,
                 transform: hoverNext ? "translateY(-3px)" : "translateY(0)",
-                boxShadow: hoverNext ? "0 8px 20px rgba(230, 126, 126, 0.4)" : styles.btn.boxShadow,
-                transition: "all 0.2s ease"
+                boxShadow: hoverNext
+                  ? "0 8px 20px rgba(230, 126, 126, 0.4)"
+                  : styles.btn.boxShadow,
+                transition: "all 0.2s ease",
               }}
             >
               Next
             </button>
 
-            <button 
+            <button
               onClick={saveCurrentBook}
               onMouseEnter={() => setHoverSave(true)}
               onMouseLeave={() => setHoverSave(false)}
               style={{
                 ...styles.btn,
                 transform: hoverSave ? "translateY(-3px)" : "translateY(0)",
-                boxShadow: hoverSave ? "0 8px 20px rgba(230, 126, 126, 0.4)" : styles.btn.boxShadow,
-                transition: "all 0.2s ease"
+                boxShadow: hoverSave
+                  ? "0 8px 20px rgba(230, 126, 126, 0.4)"
+                  : styles.btn.boxShadow,
+                transition: "all 0.2s ease",
               }}
             >
               Save to Bookshelf
             </button>
 
-            <div style={{ 
-              ...styles.progress, 
-              display: "flex", 
-              flexDirection: "column", 
-              gap: 4, 
-              minWidth: 180,
-              color: THEME.ink,
-              background: darkMode ? "rgba(255,255,255,0.08)" : "rgba(242,201,76,0.25)",
-            }}>
+            <div
+              style={{
+                ...styles.progress,
+                display: "flex",
+                flexDirection: "column",
+                gap: 4,
+                minWidth: 180,
+                color: THEME.ink,
+                background: darkMode
+                  ? "rgba(255,255,255,0.08)"
+                  : "rgba(242,201,76,0.25)",
+              }}
+            >
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
-                <span><b>Page</b> {currentPage}{totalPages > 0 ? ` / ${totalPages}` : ""}</span>
-                <span><b>{progress}%</b></span>
+                <span>
+                  <b>Page</b> {currentPage}
+                  {totalPages > 0 ? ` / ${totalPages}` : ""}
+                </span>
+                <span>
+                  <b>{progress}%</b>
+                </span>
               </div>
-              <div style={{
-                height: 6,
-                borderRadius: 999,
-                background: "rgba(18,38,48,0.12)",
-                overflow: "hidden",
-              }}>
-                <div style={{
-                  height: "100%",
-                  width: `${progress}%`,
-                  background: COLORS.frame,
+              <div
+                style={{
+                  height: 6,
                   borderRadius: 999,
-                  transition: "width 0.4s ease",
-                }} />
+                  background: "rgba(18,38,48,0.12)",
+                  overflow: "hidden",
+                }}
+              >
+                <div
+                  style={{
+                    height: "100%",
+                    width: `${progress}%`,
+                    background: COLORS.frame,
+                    borderRadius: 999,
+                    transition: "width 0.4s ease",
+                  }}
+                />
               </div>
             </div>
-            
+
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <button
-                onClick={() => setFontSize(f => Math.max(60, f - 10))}
+                onClick={() => setFontSize((f) => Math.max(60, f - 10))}
                 style={{ ...styles.btn, padding: "6px 10px", fontSize: 16 }}
-              >A−</button>
-              <span style={{ fontSize: 12, color: THEME.ink, fontFamily: FONTS.ui }}>{fontSize}%</span>
+              >
+                A−
+              </button>
+              <span style={{ fontSize: 12, color: THEME.ink, fontFamily: FONTS.ui }}>
+                {fontSize}%
+              </span>
               <button
-                onClick={() => setFontSize(f => Math.min(200, f + 10))}
+                onClick={() => setFontSize((f) => Math.min(200, f + 10))}
                 style={{ ...styles.btn, padding: "6px 10px", fontSize: 16 }}
-              >A+</button>
+              >
+                A+
+              </button>
             </div>
-            
-            <div style={{ display: "flex", gap: 4, background: "rgba(18,38,48,0.06)", borderRadius: 8, padding: 3 }}>
+
+            <div
+              style={{
+                display: "flex",
+                gap: 4,
+                background: "rgba(18,38,48,0.06)",
+                borderRadius: 8,
+                padding: 3,
+              }}
+            >
               <button
                 onClick={() => setSpread("none")}
                 style={{
@@ -614,7 +752,9 @@ const isGutenberg = (url) =>
                   boxShadow: "none",
                 }}
                 title="Single page"
-              >▭</button>
+              >
+                ▭
+              </button>
               <button
                 onClick={() => setSpread("always")}
                 style={{
@@ -626,9 +766,10 @@ const isGutenberg = (url) =>
                   boxShadow: "none",
                 }}
                 title="Two pages"
-              >▭▭</button>
+              >
+                ▭▭
+              </button>
             </div>
-
 
             <label style={{ ...styles.fileLabel, color: THEME.ink }}>
               <span>Text (EPUB)</span>
@@ -640,10 +781,16 @@ const isGutenberg = (url) =>
             </label>
           </div>
 
-          <div ref={viewerRef} style={{ ...styles.viewer, background: THEME.canvas, borderLeft: `6px solid ${THEME.frame}` }} />
+          <div
+            ref={viewerRef}
+            style={{
+              ...styles.viewer,
+              background: THEME.canvas,
+              borderLeft: `6px solid ${THEME.frame}`,
+            }}
+          />
         </div>
 
-        {/* RIGHT: Sidebar */}
         <div style={styles.sidebarCard}>
           <h2 style={styles.h2}>Audio</h2>
 
@@ -651,6 +798,27 @@ const isGutenberg = (url) =>
             type="file"
             accept="audio/*"
             onChange={(e) => setAudioFile(e.target.files?.[0] || null)}
+            style={{
+              marginBottom: 10,
+              color: "#fff",
+            }}
+          />
+
+          <div
+            style={{
+              color: COLORS.white,
+              fontSize: 14,
+              marginBottom: 6,
+              fontWeight: 600,
+            }}
+          >
+            Upload alignment JSON
+          </div>
+
+          <input
+            type="file"
+            accept=".json,application/json"
+            onChange={(e) => setSyncFile(e.target.files?.[0] || null)}
             style={{
               marginBottom: 10,
               color: "#fff",
@@ -680,6 +848,46 @@ const isGutenberg = (url) =>
             <div style={{ marginTop: 6, fontSize: 13, color: "rgba(255,255,255,0.8)" }}>
               Note: LibriVox links are often ZIPs and won’t play in-browser unless extracted to an MP3.
             </div>
+          </div>
+
+          <div
+            style={{
+              marginTop: 12,
+              color: COLORS.white,
+              background: "rgba(255,255,255,0.08)",
+              border: "1px solid rgba(255,255,255,0.14)",
+              borderRadius: 14,
+              padding: 12,
+            }}
+          >
+            <div>
+              <b>Sync status:</b>{" "}
+              {activeSyncItem ? `Sentence ${activeSyncIndex + 1}` : "No active sentence"}
+            </div>
+
+            <div
+              style={{
+                marginTop: 8,
+                fontSize: 14,
+                lineHeight: 1.5,
+                color: "rgba(255,255,255,0.92)",
+              }}
+            >
+              {activeSyncItem?.sentence ||
+                "Upload aligned_timings.json and play audio to test sentence sync."}
+            </div>
+
+            {activeSyncItem && (
+              <div
+                style={{
+                  marginTop: 8,
+                  fontSize: 12,
+                  color: "rgba(255,255,255,0.7)",
+                }}
+              >
+                {activeSyncItem.start?.toFixed?.(2)}s – {activeSyncItem.end?.toFixed?.(2)}s
+              </div>
+            )}
           </div>
 
           <hr style={styles.hr} />
@@ -741,7 +949,7 @@ const styles = {
   },
 
   title: {
-    fontFamily: FONTS.headings, //FONTS.ui,
+    fontFamily: FONTS.headings,
     margin: 0,
     color: COLORS.ink,
     fontSize: 56,
