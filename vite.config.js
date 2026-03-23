@@ -33,8 +33,15 @@ export default defineConfig({
               r.headers.get("content-type") || "application/epub+zip"
             );
 
+            if (!r.body) {
+              res.statusCode = 500;
+              res.end("No response body from upstream");
+              return;
+            }
+
             Readable.fromWeb(r.body).pipe(res);
           } catch (e) {
+            console.error("EPUB proxy error:", e);
             res.statusCode = 500;
             res.end(`Proxy error: ${e.message}`);
           }

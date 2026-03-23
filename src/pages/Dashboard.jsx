@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { auth, db, storage } from "../firebase";
 import { signOut } from "firebase/auth";
-import { collection, doc, getDocs, setDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
+import { collection, doc, onSnapshot, setDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
 import { ref, uploadBytes } from "firebase/storage";
 import Modal from "../components/Modal";
 import { useNavigate } from "react-router-dom";
@@ -40,7 +40,7 @@ const generateBookId = (title) =>
 const coverFromGutendex = (formats) => formats?.["image/jpeg"] || "";
 const epubFromGutendex = (formats) => formats?.["application/epub+zip"] || "";
 
-export default function Dashboard({ user }) {
+export default function Dashboard({ user, darkMode, setDarkMode }) {
   const [gridSize, setGridSize] = useState("medium"); 
   const [sortBy, setSortBy] = useState("recent");
   const [books, setBooks] = useState([]);
@@ -57,9 +57,10 @@ export default function Dashboard({ user }) {
   const [isUploadHovered, setIsUploadHovered] = useState(false);
   const [isSearchHovered, setIsSearchHovered] = useState(false);
   const [isLogoutHovered, setIsLogoutHovered] = useState(false);
+  const [isDarkToggleHovered, setIsDarkToggleHovered] = useState(false);
+  const [isSaveHovered, setIsSaveHovered] = useState(false);
 
-  // dark mode
-  const [darkMode, setDarkMode] = useState(false);
+  
   const THEME = darkMode ? {
     canvas: "#1a1a2e",
     ink: "#e8e8f0",
@@ -89,6 +90,7 @@ export default function Dashboard({ user }) {
   const [editEpubFile, setEditEpubFile] = useState(null);
   const [editAudioFile, setEditAudioFile] = useState(null);
   const [editStatus, setEditStatus] = useState("");
+  const [hoveredSize, setHoveredSize] = useState(null);
 
   const booksCol = useMemo(() => collection(db, "Users", user.uid, "Books"), [user.uid]);
   const sortedBooks = useMemo(() => {
@@ -102,19 +104,27 @@ export default function Dashboard({ user }) {
     if (sortBy === "audio") return list.filter(b => !!b.audio_link || !!b.audio_storage_path);
     return list;
   }, [books, sortBy]);
-  const loadBooks = async () => {
-    const snap = await getDocs(booksCol);
-    const list = [];
-    snap.forEach((d) => list.push({ id: d.id, ...d.data() }));
-    setBooks(list);
-  };
-
   useEffect(() => {
-    loadBooks();
-  }, []);
+    const unsub = onSnapshot(booksCol, (snap) => {
+      const list = [];
+      snap.forEach((d) => list.push({ id: d.id, ...d.data() }));
+      setBooks(list);
+    });
+  
+    return () => unsub();
+  }, [booksCol]);
 
   const logout = async () => {
-    await signOut(auth);
+    const confirmed = window.confirm("Are you sure you want to log out?");
+
+    if (confirmed) {
+      try {
+        await signOut(auth);
+        navigate("/"); 
+      } catch (error) {
+        console.error("Logout failed:", error);
+      }
+    }
   };
 
   const openEditModal = (book) => {
@@ -172,7 +182,6 @@ export default function Dashboard({ user }) {
       setEditStatus("Saving changes...");
       await setDoc(doc(db, "Users", user.uid, "Books", editBook.id), updates, { merge: true });
 
-      await loadBooks();
       closeEditModal();
     } catch (e) {
       setEditStatus("Edit failed: " + e.message);
@@ -188,7 +197,6 @@ export default function Dashboard({ user }) {
 
     try {
       await deleteDoc(doc(db, "Users", user.uid, "Books", book.id));
-      await loadBooks();
     } catch (e) {
       alert("Delete failed: " + e.message);
     }
@@ -211,6 +219,12 @@ export default function Dashboard({ user }) {
       const baseDoc = {
         title: upTitle.trim(),
         author: upAuthor.trim() || "Unknown",
+        generated_audio_status: "idle",
+        generated_audio_progress: 0,
+        generated_audio_current: 0,
+        generated_audio_total: 0,
+        generated_audio_tracks: [],
+        generated_audio_error: null,
         updatedAt: serverTimestamp(),
         createdAt: serverTimestamp(),
       };
@@ -229,6 +243,9 @@ export default function Dashboard({ user }) {
           {
             epub_storage_path: epubPath,
             epub_source: "upload",
+            generated_audio_status: "idle",
+            generated_audio_storage_path: null,
+            generated_audio_error: null,
             updatedAt: serverTimestamp(),
           },
           { merge: true }
@@ -247,6 +264,7 @@ export default function Dashboard({ user }) {
             audio_storage_path: audioPath,
             audio_source: "upload",
             updatedAt: serverTimestamp(),
+
           },
           { merge: true }
         );
@@ -258,7 +276,6 @@ export default function Dashboard({ user }) {
       setUpAuthor("");
       setUpFile(null);
       setUpAudioFile(null);
-      await loadBooks();
     } catch (e) {
       setUpStatus("Upload failed: " + e.message);
     }
@@ -298,23 +315,79 @@ export default function Dashboard({ user }) {
       setSearchStatus("Search failed: " + e.message);
     }
   };
-
+  const prepareLibrivoxAudio = async (bookId) => {
+    try {
+      const res = await fetch("http://127.0.0.1:5002/prepare-librivox-audio", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          uid: user.uid,
+          bookId
+        })
+      });
+  
+      const data = await res.json();
+      console.log("prepare-librivox-audio:", data);
+  
+      if (!res.ok) {
+        alert(data.error || "Failed to prepare LibriVox audio.");
+      }
+    } catch (e) {
+      console.error("prepareLibrivoxAudio fetch error:", e);
+      alert("Could not reach LibriVox audio processor: " + e.message);
+    }
+  };
+  const generateAudiobook = async (bookId) => {
+    try {
+      const res = await fetch("http://127.0.0.1:5002/generate-audio", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          uid: user.uid,
+          bookId
+        })
+      });
+  
+      const data = await res.json();
+      console.log("generate-audio status:", res.status);
+      console.log("generate-audio data:", data);
+  
+      if (!res.ok) {
+        alert(data.error || "Audio generation failed.");
+        return;
+      }
+  
+      alert("Audiobook generated.");
+    } catch (e) {
+      console.error("generateAudiobook error:", e);
+      alert("Could not reach audio generator: " + e.message);
+    }
+  };
   const addEpub = async (book) => {
     const id = generateBookId(book.title);
     await setDoc(
-      doc(db, "Users", user.uid, "Books", id),
-      {
-        title: book.title,
-        author: book.author,
-        cover_url: book.cover_url || "",
-        epub_link: book.epub_link,
-        epub_preview_url: book.epub_preview_url || "",
-        updatedAt: serverTimestamp(),
-        createdAt: serverTimestamp(),
-      },
-      { merge: true }
-    );
-    await loadBooks();
+        doc(db, "Users", user.uid, "Books", id),
+        {
+          title: book.title,
+          author: book.author,
+          cover_url: book.cover_url || "",
+          epub_link: book.epub_link,
+          epub_preview_url: book.epub_preview_url || "",
+          generated_audio_status: "idle",
+          generated_audio_progress: 0,
+          generated_audio_current: 0,
+          generated_audio_total: 0,
+          generated_audio_tracks: [],
+          generated_audio_error: null,
+          updatedAt: serverTimestamp(),
+          createdAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
   };
 
   const findAudio = async (title) => {
@@ -336,7 +409,6 @@ export default function Dashboard({ user }) {
       },
       { merge: true }
     );
-    await loadBooks();
   };
 
   const addBoth = async (book, setRowStatus) => {
@@ -417,24 +489,22 @@ export default function Dashboard({ user }) {
               style={{
                 background: COLORS.frame, // Midnight Navy default
                 color: COLORS.white,
-
                 fontFamily: FONTS.ui,
-                //fontSize: 14,
-                fontWeight: 500,
-                
+                fontSize: 13,
+                fontWeight: 600,
+                lineHeight: 2,
                 // Shape & Spacing
                 border: "none",
                 borderRadius: 12,
-                padding: "10px 18px",
+                width: 42,
+                height: 42,
+                padding: 0,//"10px 12px",
+                
                 cursor: "pointer",
 
-                /*display: "flex",
+                display: "flex",
                 alignItems: "center",
-                gap: 10,
-                background: COLORS.white,
-                border: `1px solid ${COLORS.border}`,
-                borderRadius: 14,
-                padding: "10px 12px",*/
+                justifyContent: "center",
                 
                 // Interaction & Animation
                 transition: "all 0.3s ease",
@@ -447,21 +517,39 @@ export default function Dashboard({ user }) {
                 
               }}
             >
-              Logout
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                <polyline points="16 17 21 12 16 7"/>
+                <line x1="21" y1="12" x2="9" y2="12"/>
+              </svg>
             </button>
 
             <button
               onClick={() => setDarkMode(d => !d)}
+              onMouseEnter={() => setIsDarkToggleHovered(true)}
+              onMouseLeave={() => setIsDarkToggleHovered(false)}
               style={{
                 background: darkMode ? COLORS.status : COLORS.ink,
                 color: darkMode ? COLORS.ink : COLORS.white,
                 border: "none",
                 borderRadius: 12,
-                padding: "10px 14px",
+                height: 42,
+                padding: "0 14px",
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
+                
                 cursor: "pointer",
                 fontFamily: FONTS.ui,
                 fontWeight: 600,
                 fontSize: 13,
+                transition: "all 0.3s ease",
+                transform: isDarkToggleHovered ? "translateY(-3px)" : "translateY(0)",
+                boxShadow: isDarkToggleHovered
+                  ? darkMode
+                    ? "0 8px 20px rgba(242, 201, 76, 0.5)"
+                    : "0 8px 20px rgba(26, 75, 93, 0.4)"
+                  : "0 2px 8px rgba(18, 38, 48, 0.08)",
               }}
             >
               {darkMode ? "☀ Light" : "☾ Dark"}
@@ -477,22 +565,37 @@ export default function Dashboard({ user }) {
           </p>
         </div>
 
-        <div style={{ display: "flex", gap: 6, background: darkMode ? "rgba(255,255,255,0.05)" : "rgba(18, 38, 48, 0.05)", padding: 4, borderRadius: 10 }}>
+        <div style={{ display: "flex", width: "100%", boxSizing: "border-box", gap: 6, background: darkMode ? "rgba(255,255,255,0.08)" : "rgba(18, 38, 48, 0.06)", padding: 4, borderRadius: 10 }}>
           {["small", "medium", "large"].map((size) => (
             <button
               key={size}
               onClick={() => setGridSize(size)}
+              onMouseEnter={() => setHoveredSize(size)}
+              onMouseLeave={() => setHoveredSize(null)}
               style={{
                 padding: "4px 10px",
                 fontSize: 11,
-                borderRadius: 7,
+                borderRadius: 999,
                 cursor: "pointer",
-                border: "none",
-                background: gridSize === size ? THEME.white : "transparent",
-                color: THEME.ink,
+                border: gridSize === size
+                  ? "1px solid rgba(242, 201, 76, 0.55)"
+                  : "1px solid transparent",
+                background: gridSize === size
+                  ? (darkMode ? COLORS.status : COLORS.frame)
+                  : hoveredSize === size
+                    ? darkMode ? "rgba(255,255,255,0.1)" : "rgba(18,38,48,0.08)"
+                    : "transparent",
+                color: gridSize === size
+                  ? (darkMode ? COLORS.ink : COLORS.white)
+                  : THEME.ink,
                 fontWeight: gridSize === size ? "700" : "400",
-                boxShadow: gridSize === size ? "0 2px 5px rgba(0,0,0,0.1)" : "none",
-                transition: "all 0.2s ease",
+                boxShadow: gridSize === size
+                  ? "0 0 0 1px rgba(242, 201, 76, 0.18)"
+                  : hoveredSize === size
+                    ? "0 8px 20px rgba(26, 75, 93, 0.4)"
+                    : "none",
+                transition: "all 0.3s ease",
+                transform: hoveredSize === size && gridSize !== size ? "translateY(-3px)" : "translateY(0)",
                 fontFamily: FONTS.ui,
               }}
             >
@@ -536,17 +639,20 @@ export default function Dashboard({ user }) {
         }}>
           <AddTile
             size={gridSize}
+            darkMode={darkMode}
             onClick={() => {
               setTab("upload");
               setModalOpen(true);
             }}
           />
-
+        
           {sortedBooks.map((b) => (
             <BookTile
               key={b.id}
               size={gridSize}
               book={b}
+              onGenerateAudiobook={generateAudiobook}
+              onPrepareLibrivoxAudio={prepareLibrivoxAudio}
               onEdit={openEditModal}
               onDelete={deleteBook}
               darkMode={darkMode}
@@ -743,7 +849,24 @@ export default function Dashboard({ user }) {
               />
             </Field>
 
-            <button onClick={saveEditedBook} style={{ ...btnWide, background: COLORS.spark }}>
+            <button 
+              onClick={saveEditedBook} 
+              onMouseEnter={() => setIsSaveHovered(true)}
+              onMouseLeave={() => setIsSaveHovered(false)}
+              style={{ 
+                ...btnWide, 
+                background: COLORS.frame,
+                color: COLORS.white,
+                cursor: "pointer",
+                border: "none",
+                transition: "all 0.3s ease",
+                transform: isSaveHovered ? "translateY(-3px)" : "translateY(0)",
+                boxShadow: isSaveHovered
+                  ? "0 8px 20px rgba(26, 75, 93, 0.4)"
+                  : "0 2px 8px rgba(18, 38, 48, 0.08)",
+
+              }}
+            >
               Save Changes
             </button>
 
@@ -765,7 +888,7 @@ export default function Dashboard({ user }) {
   );
 }
 
-function AddTile({ onClick, size }) {
+function AddTile({ onClick, size, darkMode }) {
   const [isHovered, setIsHovered] = useState(false);
   const config = GRID_CONFIGS[size];
 
@@ -775,11 +898,6 @@ function AddTile({ onClick, size }) {
       onMouseEnter={() => setIsHovered(true)}  
       onMouseLeave={() => setIsHovered(false)}
       style={{
-        //background: "rgba(255,255,255,0.28)",
-        //border: "2px dashed rgba(26,75,93,0.16)",
-        //borderRadius: 16,
-        //boxShadow: "0 2px 10px rgba(18,38,48,0.04)",
-        //minHeight: 210,
         display: "flex",
         flexDirection: "column",
         gap: 10,
@@ -797,8 +915,10 @@ function AddTile({ onClick, size }) {
         width: config.width, //"160px",
         height: config.height, //"240px",
         //aspectRatio: "2 / 3",
-        background: "rgba(255,255,255,0.28)",
-        border: isHovered ? `2px solid ${COLORS.frame}` : `2px dashed ${COLORS.border}`, //border: `2px dashed ${COLORS.border}`, //"2px dashed rgba(26,75,93,0.2)",
+        background: darkMode ? "rgba(255,255,255,0.06)" : "rgba(255,255,255,0.28)",
+        border: isHovered 
+          ? darkMode ? `2px solid ${COLORS.status}` : `2px solid ${COLORS.frame}`
+          : darkMode ? "2px dashed rgba(232,232,240,0.25)" : `2px dashed ${COLORS.border}`,
         borderRadius: 8, 
         display: "flex",
         alignItems: "center",
@@ -815,23 +935,14 @@ function AddTile({ onClick, size }) {
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              //lineHeight: "58px",
-              //lineHeight: 1,
               fontSize: size === "small" ? 24 : 34, //34,
               // dynamic colors
-              background: isHovered ? COLORS.frame : "rgba(18, 38, 48, 0.05)",
-              border: `2px solid ${isHovered ? COLORS.frame : COLORS.ink}`,
-              color: isHovered ? "#FFFFFF" : COLORS.ink, 
+              background: isHovered ? (darkMode ? COLORS.status : COLORS.frame) : darkMode ? "rgba(255,255,255,0.08)" : "rgba(18, 38, 48, 0.05)",
+              border: `2px solid ${isHovered ? (darkMode ? COLORS.status : COLORS.frame) : (darkMode ? "#e8e8f0" : COLORS.ink)}`,
+              color: isHovered ? (darkMode ? COLORS.ink : "#FFFFFF") : (darkMode ? "#e8e8f0" : COLORS.ink), 
               
               // THE ANIMATION:
               transition: "all 0.3s ease",
-              
-              
-              /*margin: "0",
-              background: "rgba(230,126,126,0.10)",
-              border: "1px solid rgba(230,126,126,0.28)",
-              color: COLORS.frame,*/
-              //fontFamily: FONTS.ui,
             }}
           >
             <span style={{ marginTop: "-4px" }}>+</span>
@@ -846,11 +957,11 @@ function AddTile({ onClick, size }) {
           fontSize: config.fontSize, // 14, 
           fontFamily: FONTS.ui, 
           transition: "color 0.3s ease",
-          color: isHovered ? COLORS.frame : COLORS.ink }}>
+          color: isHovered ? (darkMode ? COLORS.status : COLORS.frame) : (darkMode ? "#e8e8f0" : COLORS.ink) }}>
             Add new book
         </b>
         {size !== "small" && (
-          <div style={{ fontSize: 12, color: COLORS.mutedInk, fontFamily: FONTS.ui }}>
+          <div style={{ fontSize: 12, color: darkMode ? "rgba(232,232,240,0.55)" : COLORS.mutedInk, fontFamily: FONTS.ui }}>
             Upload or search
           </div>
         )}
@@ -859,260 +970,312 @@ function AddTile({ onClick, size }) {
   );
 }
 
-function BookTile({ book, onEdit, onDelete, size , darkMode}) {
-  const navigate = useNavigate();
-  const config = GRID_CONFIGS[size] || GRID_CONFIGS["medium"];
-  const inkColor = darkMode ? "#e8e8f0" : COLORS.ink;
-  const mutedColor = darkMode ? "rgba(232,232,240,0.65)" : "#6b7280";
-
-  const hasEpub = !!book.epub_link || !!book.epub_storage_path;
-  const hasAudio = !!book.audio_link || !!book.audio_storage_path;
-
-  const badgeText = hasEpub && hasAudio ? "EPUB + Audio" : hasEpub ? "EPUB" : hasAudio ? "Audio" : "Book";
-
-  const actionButtonStyle = {
-    border: "1px solid rgba(255,255,255,0.18)",
-    background: COLORS.ink,
-    color: "#fff",
-    padding: "7px 10px",
-    borderRadius: 8,
-    fontWeight: 700,
-    cursor: "pointer",
-    fontSize: 11,
-    backdropFilter: "blur(4px)",
-    transition: "all 0.2s ease",
-  };
-
-  const deleteButtonStyle = {
-    ...actionButtonStyle,
-    background: "rgba(127,29,29,0.82)",
-    border: "1px solid rgba(254,202,202,0.35)",
-  };
-
-  const confirmOpen = (label, url) => {
-    if (!url) return;
-    const ok = window.confirm(`Open ${label}?\n\nThis may download a file.`);
-    if (ok) window.open(url, "_blank", "noopener,noreferrer");
-  };
-
-  const coverStyle = book.cover_url
-    ? {
-        backgroundImage: `url('${book.cover_url}')`,
-        backgroundSize: "cover",
-        backgroundPosition: "center",
-        backgroundRepeat: "no-repeat",
-      }
-    : {
-        background:
-          "linear-gradient(160deg, rgb(194, 211, 236) 0%, rgb(215, 232, 228) 55%, rgb(184, 204, 230) 100%)",
-      };
-
-  return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: 10,
-      }}
-    >
-      <div
-        style={{
-          position: "relative",
-          //width: "160px", //"100%",
-          //aspectRatio: "2 / 3",
-          width: config.width,
-          height: config.height,
-          borderRadius: "2px 8px 8px 2px", //14,
-          overflow: "hidden",
-          boxShadow: "6px 8px 15px rgba(0,0,0,0.3), -1px 0 2px rgba(0,0,0,0.1)", //"0 10px 24px rgba(0,0,0,0.18)",
-          cursor: "pointer",
-          transition: "transform 0.18s ease, box-shadow 0.18s ease",
-          ...coverStyle,
+function BookTile({ book, onEdit, onDelete, onGenerateAudiobook, onPrepareLibrivoxAudio, size, darkMode }) {
+    const navigate = useNavigate();
+    const config = GRID_CONFIGS[size] || GRID_CONFIGS["medium"];
+    const inkColor = darkMode ? "#e8e8f0" : COLORS.ink;
+    const mutedColor = darkMode ? "rgba(232,232,240,0.65)" : "#6b7280";
+  
+    const hasEpub = !!book.epub_link || !!book.epub_storage_path;
+    const hasAudio = !!book.audio_link || !!book.audio_storage_path;
+    const hasGeneratedAudio = Array.isArray(book.generated_audio_tracks) && book.generated_audio_tracks.length > 0;
+  
+    const isGenerating = book.generated_audio_status === "running";
+    const isReady = book.generated_audio_status === "ready" && hasGeneratedAudio;
+    const isError = book.generated_audio_status === "error";
+  
+    const generationProgress = book.generated_audio_progress || 0;
+    const generationCurrent = book.generated_audio_current || 0;
+    const generationTotal = book.generated_audio_total || 0;
+  
+    const badgeText =
+      hasEpub && (hasAudio || hasGeneratedAudio)
+        ? "EPUB + Audio"
+        : hasEpub
+        ? "EPUB"
+        : hasAudio || hasGeneratedAudio
+        ? "Audio"
+        : "Book";
+  
+    const actionButtonStyle = {
+      border: "1px solid rgba(255,255,255,0.18)",
+      background: COLORS.ink,
+      color: "#fff",
+      padding: "7px 10px",
+      borderRadius: 8,
+      fontWeight: 700,
+      cursor: "pointer",
+      fontSize: 11,
+      backdropFilter: "blur(4px)",
+      transition: "all 0.2s ease",
+    };
+  
+    const deleteButtonStyle = {
+      ...actionButtonStyle,
+      background: "rgba(127,29,29,0.82)",
+      border: "1px solid rgba(254,202,202,0.35)",
+    };
+    const [hoveredBtn, setHoveredBtn] = useState(null);
+    const hoverStyle = (id) => ({
+      transform: hoveredBtn === id ? "translateY(-3px)" : "translateY(0)",
+      boxShadow: hoveredBtn === id ? "0 8px 20px rgba(26, 75, 93, 0.4)" : "none",
+    });
+  
+    const confirmOpen = (label, url) => {
+      if (!url) return;
+      const ok = window.confirm(`Open ${label}?\n\nThis may download a file.`);
+      if (ok) window.open(url, "_blank", "noopener,noreferrer");
+    };
+  
+    const coverStyle = book.cover_url
+      ? {
+          backgroundImage: `url('${book.cover_url}')`,
           backgroundSize: "cover",
           backgroundPosition: "center",
-        }}
-        onClick={() => navigate(`/reader/${book.id}`)}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.transform = "translateY(-4px)";
-          e.currentTarget.style.boxShadow = "0 16px 30px rgba(0,0,0,0.24)";
-          const overlay = e.currentTarget.querySelector(".book-hover-overlay");
-          if (overlay) overlay.style.opacity = "1";
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.transform = "translateY(0)";
-          e.currentTarget.style.boxShadow = "0 10px 24px rgba(0,0,0,0.18)";
-          const overlay = e.currentTarget.querySelector(".book-hover-overlay");
-          if (overlay) overlay.style.opacity = "0";
+          backgroundRepeat: "no-repeat",
+        }
+      : {
+          background:
+            "linear-gradient(160deg, rgb(194, 211, 236) 0%, rgb(215, 232, 228) 55%, rgb(184, 204, 230) 100%)",
+        };
+  
+    return (
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: 10,
         }}
       >
         <div
           style={{
-            position: "absolute",
-            inset: 0,
-            //background:
-            //  "linear-gradient(to top, rgba(17,24,39,0.72) 0%, rgba(17,24,39,0.18) 36%, rgba(17,24,39,0.04) 60%)",
-            //background: "linear-gradient(to right, rgba(0,0,0,0.2) 0%, rgba(0,0,0,0) 4%, rgba(255,255,255,0.1) 5%, rgba(0,0,0,0) 10%)",
-            pointerEvents: "none",
-            zIndex: 1
+            position: "relative",
+            width: config.width,
+            height: config.height,
+            borderRadius: "2px 8px 8px 2px",
+            overflow: "hidden",
+            boxShadow: "6px 8px 15px rgba(0,0,0,0.3), -1px 0 2px rgba(0,0,0,0.1)",
+            cursor: "pointer",
+            transition: "transform 0.18s ease, box-shadow 0.18s ease",
+            ...coverStyle,
+            backgroundSize: "cover",
+            backgroundPosition: "center",
           }}
-        />
-
-        <div
-          style={{
-            position: "absolute",
-            top: 10,
-            left: 10,
-            fontSize: 10,
-            fontWeight: 800,
-            letterSpacing: "0.02em",
-            background: "rgba(255,255,255,0.82)",
-            color: COLORS.ink,
-            padding: "5px 8px",
-            borderRadius: 999,
-            border: "1px solid rgba(17,24,39,0.08)",
+          onClick={() => navigate(`/reader/${book.id}`)}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.transform = "translateY(-4px)";
+            e.currentTarget.style.boxShadow = "0 16px 30px rgba(0,0,0,0.24)";
+            const overlay = e.currentTarget.querySelector(".book-hover-overlay");
+            if (overlay) overlay.style.opacity = "1";
           }}
-        >
-          {badgeText}
-        </div>
-
-        <div
-          className="book-hover-overlay"
-          style={{
-            position: "absolute",
-            inset: 0,
-            opacity: 0,
-            transition: "opacity 0.18s ease",
-            display: "flex",
-            alignItems: "flex-end",
-            justifyContent: "center",
-            padding: 12,
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = "translateY(0)";
+            e.currentTarget.style.boxShadow = "0 10px 24px rgba(0,0,0,0.18)";
+            const overlay = e.currentTarget.querySelector(".book-hover-overlay");
+            if (overlay) overlay.style.opacity = "0";
           }}
-          onClick={(e) => e.stopPropagation()}
         >
           <div
             style={{
-              display: "flex",
-              gap: 8,
-              flexWrap: "wrap",
-              justifyContent: "center",
+              position: "absolute",
+              inset: 0,
+              pointerEvents: "none",
+              zIndex: 1
+            }}
+          />
+  
+          <div
+            style={{
+              position: "absolute",
+              top: 10,
+              left: 10,
+              fontSize: 10,
+              fontWeight: 800,
+              letterSpacing: "0.02em",
+              background: "rgba(255,255,255,0.82)",
+              color: COLORS.ink,
+              padding: "5px 8px",
+              borderRadius: 999,
+              border: "1px solid rgba(17,24,39,0.08)",
             }}
           >
-            <button 
-              style={actionButtonStyle} 
-              onClick={() => navigate(`/reader/${book.id}`)}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = COLORS.frame; // Switch to #8E2424
-                e.currentTarget.style.transform = "scale(1.05)";  // pop animation
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = COLORS.ink;    
-                e.currentTarget.style.transform = "scale(1)";
+            {badgeText}
+          </div>
+  
+          <div
+            className="book-hover-overlay"
+            style={{
+              position: "absolute",
+              inset: 0,
+              opacity: 0,
+              transition: "opacity 0.18s ease",
+              display: "flex",
+              alignItems: "flex-end",
+              justifyContent: "center",
+              padding: 12,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              style={{
+                display: "flex",
+                gap: 8,
+                flexWrap: "wrap",
+                justifyContent: "center",
               }}
             >
-              Read
-            </button>
-
-            {hasEpub && (
               <button
-                style={actionButtonStyle}
-                onClick={() => confirmOpen("EPUB", book.epub_link)}
-                onMouseEnter={(e) => {
-                e.currentTarget.style.background = COLORS.frame; // Switch to #8E2424
-                e.currentTarget.style.transform = "scale(1.05)";  // pop animation
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = COLORS.ink;    
-                e.currentTarget.style.transform = "scale(1)";
-              }}
+                style={{ ...actionButtonStyle, ...hoverStyle("read"), transition: "all 0.2s ease" }}
+                onMouseEnter={() => setHoveredBtn("read")}
+                onMouseLeave={() => setHoveredBtn(null)}
+                onClick={() => navigate(`/reader/${book.id}`)}
               >
-                EPUB
+                Read
               </button>
-            )}
-
-            {hasAudio && (
+  
+              {hasEpub && (
+                <button
+                  style={{ ...actionButtonStyle, ...hoverStyle("epub"), transition: "all 0.2s ease" }}
+                  onMouseEnter={() => setHoveredBtn("epub")}
+                  onMouseLeave={() => setHoveredBtn(null)}
+                  onClick={() => confirmOpen("EPUB", book.epub_link)}
+                >
+                  EPUB
+                </button>
+              )}
+  
+              {(hasAudio || hasGeneratedAudio) && (
+                <button
+                  style={{ ...actionButtonStyle, ...hoverStyle("listen"), transition: "all 0.2s ease" }}
+                  onMouseEnter={() => setHoveredBtn("listen")}
+                  onMouseLeave={() => setHoveredBtn(null)}
+                  onClick={() => navigate(`/reader/${book.id}`)}
+                >
+                  Listen
+                </button>
+              )}
+  
               <button
-                style={actionButtonStyle}
-                onClick={() => confirmOpen("Audiobook", book.audio_preview_url || book.audio_link)}
+                style={{ ...actionButtonStyle, ...hoverStyle("edit"), transition: "all 0.2s ease" }}
+                onMouseEnter={() => setHoveredBtn("edit")}
+                onMouseLeave={() => setHoveredBtn(null)}
+                onClick={() => onEdit(book)}
               >
-                Audio
+                Edit
               </button>
-            )}
-
-            <button 
-              style={actionButtonStyle} 
-              onClick={() => onEdit(book)}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = COLORS.frame; // Switch to #8E2424
-                e.currentTarget.style.transform = "scale(1.05)";  // pop animation
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = COLORS.ink;    
-                e.currentTarget.style.transform = "scale(1)";
-              }}
-            >
-              Edit
+  
+              <button
+                style={{ ...deleteButtonStyle, ...hoverStyle("delete"), transition: "all 0.2s ease" }}
+                onMouseEnter={() => setHoveredBtn("delete")}
+                onMouseLeave={() => setHoveredBtn(null)}
+                onClick={() => onDelete(book)}
+              >
+                Delete
+              </button>
+  
+              <button
+                style={{
+                  ...actionButtonStyle,
+                  ...hoverStyle("generate"),
+                  opacity: isGenerating ? 0.65 : 1,
+                  cursor: isGenerating ? "not-allowed" : "pointer",
+                  transition: "all 0.2s ease",
+                }}
+                onMouseEnter={() => !isGenerating && setHoveredBtn("generate")}
+                onMouseLeave={() => setHoveredBtn(null)}
+                onClick={() => !isGenerating && onGenerateAudiobook(book.id)}
+              >
+                {isGenerating ? "Generating..." : isReady ? "Regenerate Audio" : "Generate Audiobook"}
+              </button>
+              <button
+                style={{ ...actionButtonStyle, ...hoverStyle("librivox"), transition: "all 0.2s ease" }}
+                onMouseEnter={() => setHoveredBtn("librivox")}
+                onMouseLeave={() => setHoveredBtn(null)}
+                onClick={() => onPrepareLibrivoxAudio(book.id)}
+                >
+                Prepare LibriVox Audio
             </button>
-
-            <button 
-              style={deleteButtonStyle} 
-              onClick={() => onDelete(book)}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.filter = "brightness(1.5)"; // Makes the #8E2424 glow
-                e.currentTarget.style.transform = "scale(1.08)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.filter = "brightness(1)";
-                e.currentTarget.style.transform = "scale(1)";
-              }}
-            >
-              Delete
-            </button>
+            </div>
           </div>
         </div>
-      </div>
-
-      <div style={{ 
-        //minHeight: 44 
-        width: config.width, //"160px", 
-        //height: "85px", 
-        marginTop: "10px",
-        display: "flex",
-        flexDirection: "column",
-        justifyContent: "flex-start"
-      }}>
+  
         <div
           style={{
-            fontSize: config.fontSize, //14,
-            fontWeight: 800,
-            lineHeight: 1.2,
-            color: inkColor, //COLORS.ink,
-            fontFamily: FONTS.headings,
-            marginBottom: 4,
-            display: "-webkit-box",
-            WebkitLineClamp: "3",
-            WebkitBoxOrient: "vertical",
-            overflow: "hidden",
-            //height: "54px",
-            WebkitLineClamp: config.lineClamp,
+            width: config.width,
+            marginTop: "10px",
+            display: "flex",
+            flexDirection: "column",
+            justifyContent: "flex-start"
           }}
         >
-          {book.title || "(Untitled)"}
-        </div>
-
-        <div
-          style={{
-            fontSize: config.fontSize - 2, //12,
-            color: mutedColor, //"#6b7280",
-            lineHeight: 1.3,
-          }}
-        >
-          {book.author || "Unknown"}
+          <div
+            style={{
+              fontSize: config.fontSize,
+              fontWeight: 800,
+              lineHeight: 1.2,
+              color: inkColor,
+              fontFamily: FONTS.headings,
+              marginBottom: 4,
+              display: "-webkit-box",
+              WebkitLineClamp: config.lineClamp,
+              WebkitBoxOrient: "vertical",
+              overflow: "hidden",
+            }}
+          >
+            {book.title || "(Untitled)"}
+          </div>
+  
+          <div
+            style={{
+              fontSize: config.fontSize - 2,
+              color: mutedColor,
+              lineHeight: 1.3,
+            }}
+          >
+            {book.author || "Unknown"}
+          </div>
+  
+          {isGenerating && (
+            <div style={{ marginTop: 8 }}>
+              <div style={{ fontSize: 11, color: mutedColor, marginBottom: 4 }}>
+                Generating audiobook… {generationCurrent}/{generationTotal}
+              </div>
+              <div
+                style={{
+                  width: "100%",
+                  height: 8,
+                  background: darkMode ? "rgba(255,255,255,0.12)" : "#e5e7eb",
+                  borderRadius: 999,
+                  overflow: "hidden"
+                }}
+              >
+                <div
+                  style={{
+                    width: `${generationProgress}%`,
+                    height: "100%",
+                    background: COLORS.frame,
+                    transition: "width 0.3s ease"
+                  }}
+                />
+              </div>
+            </div>
+          )}
+  
+          {isReady && (
+            <div style={{ marginTop: 8, fontSize: 11, color: "#16a34a", fontWeight: 700 }}>
+              Audiobook ready — open Reader to listen
+            </div>
+          )}
+  
+          {isError && (
+            <div style={{ marginTop: 8, fontSize: 11, color: "#b91c1c" }}>
+              Audio generation failed
+            </div>
+          )}
         </div>
       </div>
-    </div>
-  );
-}
-
+    );
+  }
 function SearchResultCard({ book, onAddEpub, onFindAudio, onAddAudio, onAddBoth }) {
   const [rowStatus, setRowStatus] = useState("");
   const [audioLink, setAudioLink] = useState("");
