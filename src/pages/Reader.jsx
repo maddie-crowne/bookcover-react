@@ -36,9 +36,9 @@ export default function Reader({ darkMode, setDarkMode }) {
   const isCountingRef = useRef(false);
 
   const [bookTotalPages, setBookTotalPages] = useState(0);
-
   const [user, setUser] = useState(null);
   const [status, setStatus] = useState("Upload an EPUB and an MP3 to begin.");
+
   const [remoteBook, setRemoteBook] = useState(null);
 
   const [epubFile, setEpubFile] = useState(null);
@@ -69,9 +69,12 @@ export default function Reader({ darkMode, setDarkMode }) {
   const [hoverDoublePage, setHoverDoublePage] = useState(false);
   const [isLogoutHovered, setIsLogoutHovered] = useState(false);
   const [locationsReady, setLocationsReady] = useState(false);
-
   const [isCountingPages, setIsCountingPages] = useState(false);
 
+  // Sync state
+  const [syncFile, setSyncFile] = useState(null);
+  const [syncData, setSyncData] = useState([]);
+  const [activeSyncIndex, setActiveSyncIndex] = useState(-1);
 
   const THEME = darkMode
     ? {
@@ -81,6 +84,8 @@ export default function Reader({ darkMode, setDarkMode }) {
         mutedInk: "rgba(232,232,240,0.65)",
         white: "#16213e",
         border: "rgba(232,232,240,0.12)",
+        sidebarBg: "#0f3460",
+        highlight: "rgba(242, 201, 76, 0.35)",
       }
     : {
         canvas: COLORS.canvas,
@@ -89,6 +94,8 @@ export default function Reader({ darkMode, setDarkMode }) {
         mutedInk: COLORS.mutedInk,
         white: COLORS.white,
         border: COLORS.border,
+        sidebarBg: COLORS.frame,
+        highlight: "rgba(242, 201, 76, 0.45)",
       };
 
   const log = (...args) => console.log("[Bookcover/EPUB]", ...args);
@@ -159,6 +166,8 @@ export default function Reader({ darkMode, setDarkMode }) {
         } else if (data.audio_storage_path) {
           const url = await getDownloadURL(ref(storage, data.audio_storage_path));
           if (!cancelled) setAudioUrl(url);
+        } else if (data.audio_link) {
+          if (!cancelled) setAudioUrl(data.audio_link);
         } else {
           if (!cancelled) setAudioUrl(null);
         }
@@ -205,6 +214,53 @@ export default function Reader({ darkMode, setDarkMode }) {
     };
   }, [audioTracks, currentTrackIndex]);
 
+  useEffect(() => {
+    if (!syncFile) {
+      setSyncData([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const text = await syncFile.text();
+        const parsed = JSON.parse(text);
+        if (!cancelled) {
+          setSyncData(Array.isArray(parsed) ? parsed : []);
+        }
+      } catch (e) {
+        console.error("[Bookcover/Sync] Failed to parse sync JSON:", e);
+        if (!cancelled) setSyncData([]);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [syncFile]);
+
+  const activeSyncItem =
+    activeSyncIndex >= 0 && activeSyncIndex < syncData.length
+      ? syncData[activeSyncIndex]
+      : null;
+
+  useEffect(() => {
+    if (!Array.isArray(syncData) || syncData.length === 0) {
+      setActiveSyncIndex(-1);
+      return;
+    }
+
+    const idx = syncData.findIndex((item) => {
+      if (typeof item?.start !== "number" || typeof item?.end !== "number") {
+        return false;
+      }
+      return currentTime >= item.start && currentTime < item.end;
+    });
+
+    setActiveSyncIndex(idx);
+  }, [currentTime, syncData]);
+
   const logout = async () => {
     const confirmed = window.confirm("Are you sure you want to log out?");
     if (!confirmed) return;
@@ -246,6 +302,84 @@ export default function Reader({ darkMode, setDarkMode }) {
       alert("Save failed.");
     }
   };
+
+  const normalizeForMatch = (text) =>
+    (text || "")
+      .replace(/\s+/g, " ")
+      .replace(/[“”]/g, '"')
+      .replace(/[‘’]/g, "'")
+      .trim()
+      .toLowerCase();
+
+  const clearHighlights = () => {
+    const contents = renditionRef.current?.getContents?.() || [];
+
+    contents.forEach((content) => {
+      try {
+        const doc = content.document;
+        const oldMarks = doc.querySelectorAll(".bookcover-sync-block-highlight");
+
+        oldMarks.forEach((el) => {
+          el.classList.remove("bookcover-sync-block-highlight");
+          el.style.background = "";
+          el.style.borderRadius = "";
+          el.style.boxShadow = "";
+          el.style.transition = "";
+        });
+      } catch (e) {
+        console.error("[Bookcover/Sync] clearHighlights error:", e);
+      }
+    });
+  };
+
+  const highlightActiveSentenceInView = (sentence) => {
+    if (!sentence || !renditionRef.current) return;
+
+    const target = normalizeForMatch(sentence);
+    if (!target) return;
+
+    clearHighlights();
+
+    const contents = renditionRef.current.getContents?.() || [];
+
+    for (const content of contents) {
+      try {
+        const doc = content.document;
+        const candidates = doc.querySelectorAll("p, div, li, blockquote");
+
+        for (const el of candidates) {
+          const text = normalizeForMatch(el.textContent);
+          if (!text) continue;
+
+          const firstWords = target.split(" ").slice(0, 6).join(" ");
+          const strongMatch =
+            text.includes(target) ||
+            target.includes(text) ||
+            (firstWords.length > 20 && text.includes(firstWords));
+
+          if (strongMatch) {
+            el.classList.add("bookcover-sync-block-highlight");
+            el.style.background = THEME.highlight;
+            el.style.borderRadius = "6px";
+            el.style.boxShadow = `0 0 0 2px ${THEME.highlight}`;
+            el.style.transition = "all 0.2s ease";
+            return;
+          }
+        }
+      } catch (e) {
+        console.error("[Bookcover/Sync] highlight error:", e);
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (!activeSyncItem?.sentence) {
+      clearHighlights();
+      return;
+    }
+
+    highlightActiveSentenceInView(activeSyncItem.sentence);
+  }, [activeSyncItem, darkMode]);
 
   const destroyReader = () => {
     try {
@@ -292,24 +426,22 @@ export default function Reader({ darkMode, setDarkMode }) {
 
   const forceVisibleContents = () => {
     const contentsArr = renditionRef.current?.getContents?.() || [];
-  
+
     contentsArr.forEach((contents) => {
       try {
         const doc = contents.document;
         const html = doc.documentElement;
         const body = doc.body;
         if (!body) return;
-  
+
         html.style.background = darkMode ? "#1a1a2e" : COLORS.canvas;
         html.style.color = darkMode ? "#e8e8f0" : "#122630";
-  
+
         body.style.background = darkMode ? "#1a1a2e" : COLORS.canvas;
         body.style.color = darkMode ? "#e8e8f0" : "#122630";
         body.style.fontFamily = '"Libre Baskerville", Georgia, serif';
         body.style.lineHeight = "1.7";
         body.style.fontSize = `${fontSize}%`;
-  
-        
         body.style.margin = "0";
         body.style.padding = "24px";
         body.style.maxWidth = "none";
@@ -317,7 +449,7 @@ export default function Reader({ darkMode, setDarkMode }) {
         body.style.opacity = "1";
         body.style.visibility = "visible";
         body.style.display = "block";
-  
+
         const all = body.querySelectorAll("*");
         all.forEach((el) => {
           el.style.color = darkMode ? "#e8e8f0" : "#122630";
@@ -419,12 +551,12 @@ export default function Reader({ darkMode, setDarkMode }) {
         if (cancelled) return;
 
         await book.ready;
-        // generate locations for book-wide progress 
         book.locations.generate(1000).then(() => {
           setLocationsReady(true);
         });
+
         const rendition = book.renderTo(el, {
-          width: '100%',
+          width: "100%",
           height: "100%",
           allowScriptedContent: true,
           manager: "default",
@@ -435,32 +567,33 @@ export default function Reader({ darkMode, setDarkMode }) {
         renditionRef.current = rendition;
 
         rendition.hooks.content.register((contents) => {
-            try {
-              const doc = contents.document;
-              const html = doc.documentElement;
-              const body = doc.body;
-              if (!body) return;
-          
-              html.style.background = darkMode ? "#1a1a2e" : COLORS.canvas;
-              html.style.color = darkMode ? "#e8e8f0" : "#122630";
-          
-              body.style.background = darkMode ? "#1a1a2e" : COLORS.canvas;
-              body.style.color = darkMode ? "#e8e8f0" : "#122630";
-              body.style.fontFamily = '"Libre Baskerville", Georgia, serif';
-              body.style.lineHeight = "1.7";
-              body.style.margin = "0";
-              body.style.padding = "24px";
-              body.style.maxWidth = "none";
-              body.style.width = "auto";
-            } catch (e) {
-              console.warn("Failed to apply iframe styles:", e);
-            }
-          });
+          try {
+            const doc = contents.document;
+            const html = doc.documentElement;
+            const body = doc.body;
+            if (!body) return;
+
+            html.style.background = darkMode ? "#1a1a2e" : COLORS.canvas;
+            html.style.color = darkMode ? "#e8e8f0" : "#122630";
+
+            body.style.background = darkMode ? "#1a1a2e" : COLORS.canvas;
+            body.style.color = darkMode ? "#e8e8f0" : "#122630";
+            body.style.fontFamily = '"Libre Baskerville", Georgia, serif';
+            body.style.lineHeight = "1.7";
+            body.style.margin = "0";
+            body.style.padding = "24px";
+            body.style.maxWidth = "none";
+            body.style.width = "auto";
+          } catch (e) {
+            console.warn("Failed to apply iframe styles:", e);
+          }
+        });
 
         applyTheme(rendition);
 
         rendition.on("relocated", (location) => {
           if (isCountingRef.current) return;
+
           const page = location?.start?.displayed?.page;
           const spineIndex = location?.start?.index ?? 0;
 
@@ -473,19 +606,30 @@ export default function Reader({ darkMode, setDarkMode }) {
           setCurrentPage(globalPage);
 
           const grandTotal = spineItems.reduce(
-            (sum, _, i) => sum + (allSpinePageCountsRef.current[i] || 0), 0
+            (sum, _, i) => sum + (allSpinePageCountsRef.current[i] || 0),
+            0
           );
+
           if (grandTotal > 0) {
             setTotalPages(grandTotal);
+            setBookTotalPages(grandTotal);
             setProgress(Math.round((globalPage / grandTotal) * 100));
           } else {
             const cfi = location?.start?.cfi;
             if (cfi && bookRef.current?.locations?.percentageFromCfi) {
               try {
                 const pct = bookRef.current.locations.percentageFromCfi(cfi);
-                if (typeof pct === "number" && !isNaN(pct)) setProgress(Math.round(pct * 100));
+                if (typeof pct === "number" && !isNaN(pct)) {
+                  setProgress(Math.round(pct * 100));
+                }
               } catch {}
             }
+          }
+
+          if (activeSyncItem?.sentence) {
+            setTimeout(() => {
+              highlightActiveSentenceInView(activeSyncItem.sentence);
+            }, 100);
           }
         });
 
@@ -506,6 +650,7 @@ export default function Reader({ darkMode, setDarkMode }) {
           setStatus("Counting pages…");
           setIsCountingPages(true);
           isCountingRef.current = true;
+
           const savedLocation = renditionRef.current?.currentLocation?.();
 
           for (let i = 0; i < spineItems.length; i++) {
@@ -519,21 +664,23 @@ export default function Reader({ darkMode, setDarkMode }) {
             } catch {}
           }
 
-          // Restore original position
           if (savedLocation?.start?.cfi) {
             await rendition.display(savedLocation.start.cfi);
           } else {
             await displayFirstWorkingSpineItem(book, rendition);
           }
+
           forceVisibleContents();
           isCountingRef.current = false;
           setIsCountingPages(false);
         }
 
         const grandTotal = spineItems.reduce(
-          (sum, _, i) => sum + (allSpinePageCountsRef.current[i] || 0), 0
+          (sum, _, i) => sum + (allSpinePageCountsRef.current[i] || 0),
+          0
         );
         setBookTotalPages(grandTotal);
+        setTotalPages(grandTotal);
 
         const contents = rendition.getContents?.() || [];
         console.log(
@@ -552,7 +699,7 @@ export default function Reader({ darkMode, setDarkMode }) {
       cancelled = true;
       destroyReader();
     };
-  }, [epubFile, epubUrl]);
+  }, [epubFile, epubUrl, darkMode, spread]);
 
   useEffect(() => {
     if (!renditionRef.current) return;
@@ -563,11 +710,11 @@ export default function Reader({ darkMode, setDarkMode }) {
     if (!renditionRef.current) return;
     applyTheme(renditionRef.current);
     forceVisibleContents();
-    
+
     try {
       renditionRef.current.spread(spread);
     } catch {}
-  }, [darkMode, fontSize]);
+  }, [darkMode, fontSize, spread]);
 
   const nextPage = async () => {
     try {
@@ -915,14 +1062,35 @@ export default function Reader({ darkMode, setDarkMode }) {
                 style={{
                   ...styles.btn,
                   padding: "6px 10px",
-                  background: spread === "none" ? (darkMode ? COLORS.status : COLORS.frame) : "transparent",
+                  background:
+                    spread === "none" ? (darkMode ? COLORS.status : COLORS.frame) : "transparent",
                   color: spread === "none" ? COLORS.white : COLORS.ink,
-                  transform: hoverSinglePage && spread !== "none" ? "translateY(-3px)" : "translateY(0)",
+                  transform:
+                    hoverSinglePage && spread !== "none"
+                      ? "translateY(-3px)"
+                      : "translateY(0)",
                   transition: "all 0.2s ease",
                 }}
                 title="Single page"
               >
-                <svg width="18" height="18" viewBox="0 0 18 18" fill="none"> <rect x="4" y="2" width="10" height="14" rx="1.5" fill={spread === "none" ? (darkMode ? COLORS.ink : COLORS.white) : (darkMode ? "#e8e8f0" : COLORS.ink)} /> </svg>
+                <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+                  <rect
+                    x="4"
+                    y="2"
+                    width="10"
+                    height="14"
+                    rx="1.5"
+                    fill={
+                      spread === "none"
+                        ? darkMode
+                          ? COLORS.ink
+                          : COLORS.white
+                        : darkMode
+                        ? "#e8e8f0"
+                        : COLORS.ink
+                    }
+                  />
+                </svg>
               </button>
 
               <button
@@ -932,27 +1100,71 @@ export default function Reader({ darkMode, setDarkMode }) {
                 style={{
                   ...styles.btn,
                   padding: "6px 10px",
-                  background: spread === "always" ? (darkMode ? COLORS.status : COLORS.frame) : "transparent",
+                  background:
+                    spread === "always"
+                      ? darkMode
+                        ? COLORS.status
+                        : COLORS.frame
+                      : "transparent",
                   color: spread === "always" ? COLORS.white : COLORS.ink,
-                  transform: hoverDoublePage && spread !== "always" ? "translateY(-3px)" : "translateY(0)",
+                  transform:
+                    hoverDoublePage && spread !== "always"
+                      ? "translateY(-3px)"
+                      : "translateY(0)",
                   transition: "all 0.2s ease",
                 }}
                 title="Two pages"
               >
-                <svg width="22" height="18" viewBox="0 0 22 18" fill="none"> <rect x="1" y="2" width="9" height="14" rx="1.5" fill={spread === "always" ? (darkMode ? COLORS.ink : COLORS.white) : (darkMode ? "#e8e8f0" : COLORS.ink)} /> <rect x="12" y="2" width="9" height="14" rx="1.5" fill={spread === "always" ? (darkMode ? COLORS.ink : COLORS.white) : (darkMode ? "#e8e8f0" : COLORS.ink)} /> </svg>
+                <svg width="22" height="18" viewBox="0 0 22 18" fill="none">
+                  <rect
+                    x="1"
+                    y="2"
+                    width="9"
+                    height="14"
+                    rx="1.5"
+                    fill={
+                      spread === "always"
+                        ? darkMode
+                          ? COLORS.ink
+                          : COLORS.white
+                        : darkMode
+                        ? "#e8e8f0"
+                        : COLORS.ink
+                    }
+                  />
+                  <rect
+                    x="12"
+                    y="2"
+                    width="9"
+                    height="14"
+                    rx="1.5"
+                    fill={
+                      spread === "always"
+                        ? darkMode
+                          ? COLORS.ink
+                          : COLORS.white
+                        : darkMode
+                        ? "#e8e8f0"
+                        : COLORS.ink
+                    }
+                  />
+                </svg>
               </button>
             </div>
 
-            <label style={{
-              ...styles.fileLabel,
-              color: THEME.ink,
-              background: darkMode ? "rgba(255,255,255,0.08)" : "rgba(18,38,48,0.06)",
-              border: darkMode ? "1px solid rgba(242,201,76,0.25)" : `1px solid ${COLORS.border}`,
-              borderRadius: 12,
-              borderRadius: 8,
-              padding: 3,
-              gap: 4,
-            }}>
+            <label
+              style={{
+                ...styles.fileLabel,
+                color: THEME.ink,
+                background: darkMode ? "rgba(255,255,255,0.08)" : "rgba(18,38,48,0.06)",
+                border: darkMode
+                  ? "1px solid rgba(242,201,76,0.25)"
+                  : `1px solid ${COLORS.border}`,
+                borderRadius: 8,
+                padding: 3,
+                gap: 4,
+              }}
+            >
               <span style={{ padding: "6px 10px" }}>Text (EPUB)</span>
               <input
                 type="file"
@@ -962,17 +1174,18 @@ export default function Reader({ darkMode, setDarkMode }) {
             </label>
           </div>
 
-          <div   
-                style={{
-                position: "relative",
-                width: "100%",
-                flex: 1,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                padding: "0", //"24px 72px",
-                boxSizing: "border-box",
-            }}>
+          <div
+            style={{
+              position: "relative",
+              width: "100%",
+              flex: 1,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: "0",
+              boxSizing: "border-box",
+            }}
+          >
             <button
               onClick={prevPage}
               onMouseEnter={() => setHoverPrev(true)}
@@ -983,7 +1196,14 @@ export default function Reader({ darkMode, setDarkMode }) {
                 opacity: hoverPrev ? 1 : 0.3,
               }}
             >
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <svg
+                width="24"
+                height="24"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+              >
                 <polyline points="15 18 9 12 15 6" />
               </svg>
             </button>
@@ -994,29 +1214,28 @@ export default function Reader({ darkMode, setDarkMode }) {
                 style={{
                   ...styles.viewer,
                   background: THEME.canvas,
-                  //borderTop: `1px solid ${THEME.border}`,
-                  //borderRight: `1px solid ${THEME.border}`,
-                  //borderBottom: `1px solid ${THEME.border}`,
                   borderLeft: `6px solid ${THEME.frame}`,
                   visibility: isCountingPages ? "hidden" : "visible",
                 }}
               />
               {isCountingPages && (
-                <div style={{
-                  position: "absolute",
-                  inset: 0,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  background: THEME.canvas,
-                  borderRadius: 16,
-                  border: `1px solid ${THEME.border}`,
-                  borderLeft: `6px solid ${THEME.frame}`,
-                  fontSize: 18,
-                  fontFamily: FONTS.ui,
-                  color: THEME.mutedInk,
-                  fontWeight: 500,
-                }}>
+                <div
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    background: THEME.canvas,
+                    borderRadius: 16,
+                    border: `1px solid ${THEME.border}`,
+                    borderLeft: `6px solid ${THEME.frame}`,
+                    fontSize: 18,
+                    fontFamily: FONTS.ui,
+                    color: THEME.mutedInk,
+                    fontWeight: 500,
+                  }}
+                >
                   Loading Pages…
                 </div>
               )}
@@ -1032,7 +1251,14 @@ export default function Reader({ darkMode, setDarkMode }) {
                 opacity: hoverNext ? 1 : 0.3,
               }}
             >
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <svg
+                width="24"
+                height="24"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+              >
                 <polyline points="9 18 15 12 9 6" />
               </svg>
             </button>
@@ -1065,6 +1291,27 @@ export default function Reader({ darkMode, setDarkMode }) {
             </select>
           )}
 
+          <div
+            style={{
+              color: COLORS.white,
+              fontSize: 14,
+              marginBottom: 6,
+              fontWeight: 600,
+            }}
+          >
+            Upload alignment JSON
+          </div>
+
+          <input
+            type="file"
+            accept=".json,application/json"
+            onChange={(e) => setSyncFile(e.target.files?.[0] || null)}
+            style={{
+              marginBottom: 10,
+              color: "#fff",
+            }}
+          />
+
           <audio ref={audioRef} controls src={audioUrl || undefined} style={{ width: "100%" }} />
 
           <div
@@ -1080,6 +1327,46 @@ export default function Reader({ darkMode, setDarkMode }) {
             <div>
               <b>Current time:</b> {mmss}
             </div>
+          </div>
+
+          <div
+            style={{
+              marginTop: 12,
+              color: COLORS.white,
+              background: "rgba(255,255,255,0.08)",
+              border: "1px solid rgba(255,255,255,0.14)",
+              borderRadius: 14,
+              padding: 12,
+            }}
+          >
+            <div>
+              <b>Sync status:</b>{" "}
+              {activeSyncItem ? `Sentence ${activeSyncIndex + 1}` : "No active sentence"}
+            </div>
+
+            <div
+              style={{
+                marginTop: 8,
+                fontSize: 14,
+                lineHeight: 1.5,
+                color: "rgba(255,255,255,0.92)",
+              }}
+            >
+              {activeSyncItem?.sentence ||
+                "Upload aligned_timings.json and play audio to test sentence sync."}
+            </div>
+
+            {activeSyncItem && (
+              <div
+                style={{
+                  marginTop: 8,
+                  fontSize: 12,
+                  color: "rgba(255,255,255,0.7)",
+                }}
+              >
+                {activeSyncItem.start?.toFixed?.(2)}s – {activeSyncItem.end?.toFixed?.(2)}s
+              </div>
+            )}
           </div>
 
           <hr style={styles.hr} />
@@ -1195,14 +1482,14 @@ const styles = {
   },
   viewer: {
     width: "100%",
-    maxWidth: "100%", //"1100px",
-    height: "82vh", //"72vh",
+    maxWidth: "100%",
+    height: "82vh",
     margin: "0",
     overflow: "hidden",
     background: COLORS.canvas,
     fontFamily: '"Libre Baskerville", Georgia, serif',
-    borderRadius: "0 0 20px 20px", //16,
-    boxShadow: "none", //"0 12px 28px rgba(18,38,48,0.12)",
+    borderRadius: "0 0 20px 20px",
+    boxShadow: "none",
   },
   sidebarCard: {
     border: "none",
