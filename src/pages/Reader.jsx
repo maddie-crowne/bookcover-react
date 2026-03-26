@@ -56,6 +56,7 @@ export default function Reader({ darkMode, setDarkMode }) {
   const [totalPages, setTotalPages] = useState(0);
 
   const [fontSize, setFontSize] = useState(100);
+  const [fontFamily, setFontFamily] = useState('"Libre Baskerville", Georgia, serif');
   const [spread, setSpread] = useState("none");
 
   const [hoverPrev, setHoverPrev] = useState(false);
@@ -70,6 +71,10 @@ export default function Reader({ darkMode, setDarkMode }) {
   const [isLogoutHovered, setIsLogoutHovered] = useState(false);
   const [locationsReady, setLocationsReady] = useState(false);
   const [isCountingPages, setIsCountingPages] = useState(false);
+  const [hoveredFont, setHoveredFont] = useState(null);
+  const [bookmarks, setBookmarks] = useState([]);
+  const [currentCfi, setCurrentCfi] = useState(null);
+  const [hoverBookmark, setHoverBookmark] = useState(false);
 
   // Sync state
   const [syncFile, setSyncFile] = useState(null);
@@ -111,6 +116,14 @@ export default function Reader({ darkMode, setDarkMode }) {
     const unsub = onAuthStateChanged(auth, (u) => setUser(u));
     return () => unsub();
   }, []);
+
+  useEffect(() => {
+    if (!bookId) return;
+    try {
+      const saved = localStorage.getItem(`bookmarks_${bookId}`);
+      if (saved) setBookmarks(JSON.parse(saved));
+    } catch {}
+  }, [bookId]);
 
   useEffect(() => {
     if (!user || !bookId) return;
@@ -439,7 +452,7 @@ export default function Reader({ darkMode, setDarkMode }) {
 
         body.style.background = darkMode ? "#1a1a2e" : COLORS.canvas;
         body.style.color = darkMode ? "#e8e8f0" : "#122630";
-        body.style.fontFamily = '"Libre Baskerville", Georgia, serif';
+        body.style.fontFamily = fontFamily;
         body.style.lineHeight = "1.7";
         body.style.fontSize = `${fontSize}%`;
         body.style.margin = "0";
@@ -471,7 +484,7 @@ export default function Reader({ darkMode, setDarkMode }) {
       body: {
         background: darkMode ? "#1a1a2e" : COLORS.canvas,
         color: darkMode ? "#e8e8f0" : "#122630",
-        "font-family": '"Libre Baskerville", Georgia, serif',
+        "font-family": fontFamily,
         "font-size": `${fontSize}%`,
         "line-height": "1.7",
         margin: "0",
@@ -578,7 +591,7 @@ export default function Reader({ darkMode, setDarkMode }) {
 
             body.style.background = darkMode ? "#1a1a2e" : COLORS.canvas;
             body.style.color = darkMode ? "#e8e8f0" : "#122630";
-            body.style.fontFamily = '"Libre Baskerville", Georgia, serif';
+            body.style.fontFamily = fontFamily;
             body.style.lineHeight = "1.7";
             body.style.margin = "0";
             body.style.padding = "24px";
@@ -604,6 +617,9 @@ export default function Reader({ darkMode, setDarkMode }) {
           }
           const globalPage = offset + (page || 0);
           setCurrentPage(globalPage);
+
+          const cfi = location?.start?.cfi;
+          if (cfi) setCurrentCfi(cfi);
 
           const grandTotal = spineItems.reduce(
             (sum, _, i) => sum + (allSpinePageCountsRef.current[i] || 0),
@@ -699,11 +715,18 @@ export default function Reader({ darkMode, setDarkMode }) {
       cancelled = true;
       destroyReader();
     };
-  }, [epubFile, epubUrl, darkMode, spread]);
+  }, [epubFile, epubUrl, darkMode]);
 
   useEffect(() => {
     if (!renditionRef.current) return;
+    const loc = renditionRef.current.currentLocation?.();
+    const cfi = loc?.start?.cfi;
     renditionRef.current.spread(spread);
+    if (cfi) {
+      setTimeout(() => {
+        renditionRef.current?.display(cfi).then(() => forceVisibleContents());
+      }, 100);
+    }
   }, [spread]);
 
   useEffect(() => {
@@ -714,7 +737,7 @@ export default function Reader({ darkMode, setDarkMode }) {
     try {
       renditionRef.current.spread(spread);
     } catch {}
-  }, [darkMode, fontSize, spread]);
+  }, [darkMode, fontSize, spread, fontFamily]);
 
   const nextPage = async () => {
     try {
@@ -729,6 +752,43 @@ export default function Reader({ darkMode, setDarkMode }) {
       await renditionRef.current?.prev();
     } catch (e) {
       console.error("[Bookcover/EPUB] prev error:", e);
+    }
+  };
+
+  const toggleBookmark = () => {
+    if (!currentCfi) return;
+    const already = bookmarks.find((b) => b.cfi === currentCfi || b.page === currentPage);
+    let updated;
+    if (already) {
+      updated = bookmarks.filter((b) => b.cfi !== currentCfi);
+    } else {
+      const label = toc.find((t) => t.href)?.label || "";
+      updated = [
+        ...bookmarks,
+        {
+          cfi: currentCfi,
+          page: currentPage,
+          chapter: label,
+          savedAt: Date.now(),
+        },
+      ];
+    }
+    setBookmarks(updated);
+    localStorage.setItem(`bookmarks_${bookId}`, JSON.stringify(updated));
+  };
+
+  const deleteBookmark = (cfi) => {
+    const updated = bookmarks.filter((b) => b.cfi !== cfi);
+    setBookmarks(updated);
+    localStorage.setItem(`bookmarks_${bookId}`, JSON.stringify(updated));
+  };
+
+  const jumpToBookmark = async (cfi) => {
+    try {
+      await renditionRef.current?.display(cfi);
+      forceVisibleContents();
+    } catch (e) {
+      console.error("[Reader] jumpToBookmark failed:", e);
     }
   };
 
@@ -1010,7 +1070,61 @@ export default function Reader({ darkMode, setDarkMode }) {
                 />
               </div>
             </div>
-
+            
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 4,
+                background: darkMode ? "rgba(255,255,255,0.08)" : "rgba(18,38,48,0.06)",
+                borderRadius: 8,
+                padding: 3,
+                border: darkMode
+                  ? "1px solid rgba(242,201,76,0.25)"
+                  : "1px solid rgba(18,38,48,0.12)",
+              }}
+            >
+              {[
+                { label: "Serif", value: '"Libre Baskerville", Georgia, serif', font: "Georgia, serif" },
+                { label: "Sans",  value: "Verdana, sans-serif",                  font: "Verdana, sans-serif" },
+                { label: "Slab",  value: "Rockwell, 'Rockwell Extra Bold', serif", font: "Rockwell, Georgia, serif" },
+              ].map(({ label, value, font }) => {
+                const active = fontFamily === value;
+                return (
+                  <button
+                    key={value}
+                    onClick={() => setFontFamily(value)}
+                    onMouseEnter={() => setHoveredFont(value)}
+                    onMouseLeave={() => setHoveredFont(null)}
+                    style={{
+                      fontFamily: font,
+                      fontSize: 13,
+                      fontWeight: 500,
+                      lineHeight: "1",
+                      padding: "5px 11px",
+                      borderRadius: 6,
+                      border: "none",
+                      cursor: "pointer",
+                      transition: "all 0.2s ease",
+                      background: active
+                        ? darkMode ? COLORS.status : COLORS.frame
+                        : "transparent",
+                      color: active
+                        ? darkMode ? COLORS.ink : COLORS.white
+                        : THEME.ink,
+                      transform: hoveredFont === value && !active ? "translateY(-3px)" : "translateY(0)",
+                      boxShadow: hoveredFont === value && !active
+                        ? darkMode
+                          ? "0 8px 20px rgba(242, 201, 76, 0.3)"
+                          : "0 8px 20px rgba(26, 75, 93, 0.25)"
+                        : "none",
+                    }}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <button
                 onClick={() => setFontSize((f) => Math.max(60, f - 10))}
@@ -1151,6 +1265,34 @@ export default function Reader({ darkMode, setDarkMode }) {
                 </svg>
               </button>
             </div>
+            
+            <button
+              onClick={toggleBookmark}
+              onMouseEnter={() => setHoverBookmark(true)}
+              onMouseLeave={() => setHoverBookmark(false)}
+              title={bookmarks.find((b) => b.cfi === currentCfi || b.page === currentPage) ? "Remove bookmark" : "Bookmark this page"}
+              style={{
+                ...btnStyle,
+                padding: "6px 10px",
+                background: bookmarks.find((b) => b.cfi === currentCfi || b.page === currentPage)
+                  ? darkMode ? COLORS.status : COLORS.frame
+                  : darkMode ? "rgba(255,255,255,0.08)" : "rgba(18,38,48,0.06)",
+                color: bookmarks.find((b) => b.cfi === currentCfi || b.page === currentPage)
+                  ? darkMode ? COLORS.ink : COLORS.white
+                  : THEME.ink,
+                border: bookmarks.find((b) => b.cfi === currentCfi || b.page === currentPage)
+                  ? "none"
+                  : darkMode ? "1px solid rgba(242,201,76,0.25)" : `1px solid ${COLORS.border}`,
+                transform: hoverBookmark ? "translateY(-3px)" : "translateY(0)",
+                boxShadow: hoverBookmark
+                  ? darkMode ? "0 8px 20px rgba(242,201,76,0.3)" : "0 8px 20px rgba(26,75,93,0.25)"
+                  : "none",
+              }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill={bookmarks.find((b) => b.cfi === currentCfi || b.page === currentPage) ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+              </svg>
+            </button>
 
             <label
               style={{
@@ -1368,6 +1510,69 @@ export default function Reader({ darkMode, setDarkMode }) {
               </div>
             )}
           </div>
+
+          <hr style={styles.hr} />
+
+          <h2 style={styles.h2}>Bookmarks</h2>
+          {bookmarks.length === 0 ? (
+            <div style={{ color: "rgba(255,255,255,0.8)", fontSize: 13, marginBottom: 8 }}>
+              No bookmarks yet. Use the bookmark button while reading.
+            </div>
+          ) : (
+            <div style={{ maxHeight: 200, overflow: "auto", display: "grid", gap: 8, marginBottom: 8 }}>
+              {bookmarks.map((b) => (
+                <div
+                  key={b.cfi}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    background: "rgba(18,38,48,0.18)",
+                    border: "1px solid rgba(255,255,255,0.14)",
+                    borderRadius: 12,
+                    padding: "8px 10px",
+                  }}
+                >
+                  <button
+                    onClick={() => jumpToBookmark(b.cfi)}
+                    style={{
+                      flex: 1,
+                      textAlign: "left",
+                      background: "transparent",
+                      border: "none",
+                      color: COLORS.white,
+                      cursor: "pointer",
+                      fontFamily: FONTS.ui,
+                      fontSize: 13,
+                      fontWeight: 500,
+                      padding: 0,
+                    }}
+                  >
+                    Page {b.page}
+                    {b.chapter ? ` · ${b.chapter}` : ""}
+                    <div style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", marginTop: 2 }}>
+                      {new Date(b.savedAt).toLocaleDateString()}
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => deleteBookmark(b.cfi)}
+                    style={{
+                      background: "transparent",
+                      border: "none",
+                      color: "rgba(255,255,255,0.5)",
+                      cursor: "pointer",
+                      fontSize: 16,
+                      lineHeight: 1,
+                      padding: "2px 4px",
+                      borderRadius: 4,
+                    }}
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
 
           <hr style={styles.hr} />
 
