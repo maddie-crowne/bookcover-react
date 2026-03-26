@@ -884,6 +884,28 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
           </div>
         </Modal>
       </div>
+    
+      <div style={{
+        textAlign: "center",
+        padding: "20px 0 32px",
+        fontFamily: FONTS.ui,
+        fontSize: 12,
+        color: THEME.mutedInk, // Used THEME.mutedInk so it works in Dark Mode!
+      }}>
+        <a 
+          href="/terms"
+          style={{
+            color: THEME.frame,
+            textDecoration: "none",
+            fontWeight: 600,
+          }}
+        >
+          Terms of Use
+        </a>
+        {" · "}
+        <span>© {new Date().getFullYear()} Bookcover</span>
+      </div>
+
     </div>
   );
 }
