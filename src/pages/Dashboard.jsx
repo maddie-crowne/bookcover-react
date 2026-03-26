@@ -1125,35 +1125,34 @@ function BookTile({ book, onEdit, onDelete, onGenerateAudiobook, onPrepareLibriv
               }}
             >
               <button
-                style={{ ...actionButtonStyle, ...hoverStyle("read"), transition: "all 0.2s ease" }}
-                onMouseEnter={() => setHoveredBtn("read")}
+                style={{
+                  ...actionButtonStyle,
+                  ...hoverStyle("read"),
+                  transition: "all 0.2s ease",
+                  opacity: !hasEpub ? 0.35 : 1,
+                  cursor: !hasEpub ? "not-allowed" : "pointer",
+                }}
+                onMouseEnter={() => hasEpub && setHoveredBtn("read")}
                 onMouseLeave={() => setHoveredBtn(null)}
-                onClick={() => navigate(`/reader/${book.id}`)}
+                onClick={() => hasEpub && navigate(`/reader/${book.id}`)}
               >
-                Read
+                Reader
               </button>
   
-              {hasEpub && (
-                <button
-                  style={{ ...actionButtonStyle, ...hoverStyle("epub"), transition: "all 0.2s ease" }}
-                  onMouseEnter={() => setHoveredBtn("epub")}
-                  onMouseLeave={() => setHoveredBtn(null)}
-                  onClick={() => confirmOpen("EPUB", book.epub_link)}
-                >
-                  EPUB
-                </button>
-              )}
-  
-              {(hasAudio || hasGeneratedAudio) && (
-                <button
-                  style={{ ...actionButtonStyle, ...hoverStyle("listen"), transition: "all 0.2s ease" }}
-                  onMouseEnter={() => setHoveredBtn("listen")}
-                  onMouseLeave={() => setHoveredBtn(null)}
-                  onClick={() => navigate(`/reader/${book.id}`)}
-                >
-                  Listen
-                </button>
-              )}
+              <button
+                style={{
+                  ...actionButtonStyle,
+                  ...hoverStyle("listen"),
+                  transition: "all 0.2s ease",
+                  opacity: !(hasAudio || hasGeneratedAudio) ? 0.35 : 1,
+                  cursor: !(hasAudio || hasGeneratedAudio) ? "not-allowed" : "pointer",
+                }}
+                onMouseEnter={() => (hasAudio || hasGeneratedAudio) && setHoveredBtn("listen")}
+                onMouseLeave={() => setHoveredBtn(null)}
+                onClick={() => (hasAudio || hasGeneratedAudio) && navigate(`/player/${book.id}`)}
+              >
+                Player
+              </button>
   
               <button
                 style={{ ...actionButtonStyle, ...hoverStyle("edit"), transition: "all 0.2s ease" }}

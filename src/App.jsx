@@ -6,6 +6,7 @@ import { auth } from "./firebase";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import Reader from "./pages/Reader";
+import Player from "./pages/Player";
 
 function ProtectedRoute({ user, children }) {
   if (user === undefined) return null; 
@@ -34,6 +35,7 @@ export default function App() {
         }
       />
       <Route path="/reader/:bookId" element={<Reader user={user} darkMode={darkMode} setDarkMode={setDarkMode} />} />
+      <Route path="/player/:bookId" element={<Player user={user} darkMode={darkMode} setDarkMode={setDarkMode} />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
