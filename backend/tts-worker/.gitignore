@@ -1,0 +1,11 @@
+# Ignore virtual environment folders
+venv/
+env/
+ENV/
+.venv/
+.virtualenv/
+pyvenv.cfg
+
+# Lib and bin directories
+bin/
+lib/
