@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { auth, db } from "../firebase";
+import BookcoverLogo from "../BookcoverLogo";
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
@@ -17,7 +18,8 @@ const COLORS = {
   white: "#FFFFFF",
   border: "rgba(18, 38, 48, 0.12)",
   mutedInk: "rgba(18, 38, 48, 0.72)",
-  inputBg: "rgba(255, 255, 255, 0.72)",
+  inputBg: "rgba(235, 241, 248, 0.95)",
+  inputHover: "rgba(226, 235, 245, 1)",
 };
 
 export default function Login() {
@@ -28,6 +30,11 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [status, setStatus] = useState("");
+
+  const [hoveredTab, setHoveredTab] = useState(null);
+  const [hoveredInput, setHoveredInput] = useState(null);
+  const [buttonHovered, setButtonHovered] = useState(false);
+  const [cardHovered, setCardHovered] = useState(false);
 
   const normalizedEmail = (email || "").trim();
   const isSignup = mode === "signup";
@@ -102,11 +109,56 @@ export default function Login() {
     }
   };
 
+  const getTabStyle = (tabName) => {
+    const isActive = mode === tabName;
+    const isHovered = hoveredTab === tabName;
+
+    return {
+      ...tabStyle,
+      ...(isActive ? activeTabStyle : inactiveTabStyle),
+      transform: isHovered ? "translateY(-1px)" : "translateY(0)",
+      boxShadow: isActive
+        ? isHovered
+          ? "0 8px 20px rgba(26, 75, 93, 0.24)"
+          : "0 6px 16px rgba(26, 75, 93, 0.18)"
+        : isHovered
+        ? "inset 0 0 0 1px rgba(26, 75, 93, 0.08), 0 4px 10px rgba(18, 38, 48, 0.05)"
+        : "none",
+      background:
+        !isActive && isHovered ? "rgba(255,255,255,0.55)" : undefined,
+    };
+  };
+
+  const getInputStyle = (inputName) => ({
+    ...inputStyle,
+    background:
+      hoveredInput === inputName ? COLORS.inputHover : COLORS.inputBg,
+    border:
+      hoveredInput === inputName
+        ? `1px solid rgba(26, 75, 93, 0.28)`
+        : `1px solid rgba(26, 75, 93, 0.14)`,
+    boxShadow:
+      hoveredInput === inputName
+        ? "0 8px 18px rgba(18, 38, 48, 0.07)"
+        : "none",
+    transform: hoveredInput === inputName ? "translateY(-1px)" : "translateY(0)",
+  });
+
   return (
     <div style={pageStyle}>
-      <div style={cardStyle}>
+      <div
+        style={{
+          ...cardStyle,
+          transform: cardHovered ? "translateY(-3px)" : "translateY(0)",
+          boxShadow: cardHovered
+            ? "0 24px 60px rgba(18, 38, 48, 0.14)"
+            : "0 18px 45px rgba(18, 38, 48, 0.10)",
+        }}
+        onMouseEnter={() => setCardHovered(true)}
+        onMouseLeave={() => setCardHovered(false)}
+      >
         <div style={logoWrapStyle}>
-          <div style={logoPlaceholderStyle}>Logo</div>
+          <BookcoverLogo size={150} />
         </div>
 
         <div style={headerBlockStyle}>
@@ -126,23 +178,22 @@ export default function Login() {
               setMode("login");
               setStatus("");
             }}
-            style={{
-              ...tabStyle,
-              ...(mode === "login" ? activeTabStyle : inactiveTabStyle),
-            }}
+            onMouseEnter={() => setHoveredTab("login")}
+            onMouseLeave={() => setHoveredTab(null)}
+            style={getTabStyle("login")}
           >
             Login
           </button>
+
           <button
             type="button"
             onClick={() => {
               setMode("signup");
               setStatus("");
             }}
-            style={{
-              ...tabStyle,
-              ...(mode === "signup" ? activeTabStyle : inactiveTabStyle),
-            }}
+            onMouseEnter={() => setHoveredTab("signup")}
+            onMouseLeave={() => setHoveredTab(null)}
+            style={getTabStyle("signup")}
           >
             Create Account
           </button>
@@ -154,7 +205,9 @@ export default function Login() {
             placeholder="Email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            style={inputStyle}
+            style={getInputStyle("email")}
+            onMouseEnter={() => setHoveredInput("email")}
+            onMouseLeave={() => setHoveredInput(null)}
             autoComplete="email"
           />
 
@@ -163,7 +216,9 @@ export default function Login() {
             placeholder="Password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            style={inputStyle}
+            style={getInputStyle("password")}
+            onMouseEnter={() => setHoveredInput("password")}
+            onMouseLeave={() => setHoveredInput(null)}
             autoComplete={isSignup ? "new-password" : "current-password"}
           />
 
@@ -173,12 +228,26 @@ export default function Login() {
               placeholder="Confirm Password"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
-              style={inputStyle}
+              style={getInputStyle("confirm")}
+              onMouseEnter={() => setHoveredInput("confirm")}
+              onMouseLeave={() => setHoveredInput(null)}
               autoComplete="new-password"
             />
           )}
 
-          <button onClick={handleSubmit} style={primaryButtonStyle}>
+          <button
+            onClick={handleSubmit}
+            onMouseEnter={() => setButtonHovered(true)}
+            onMouseLeave={() => setButtonHovered(false)}
+            style={{
+              ...primaryButtonStyle,
+              transform: buttonHovered ? "translateY(-2px)" : "translateY(0)",
+              boxShadow: buttonHovered
+                ? "0 14px 28px rgba(230, 126, 126, 0.34)"
+                : "0 10px 24px rgba(230, 126, 126, 0.25)",
+              background: buttonHovered ? "#df7474" : COLORS.spark,
+            }}
+          >
             {isSignup ? "Create Account" : "Login"}
           </button>
         </div>
@@ -207,27 +276,13 @@ const cardStyle = {
   boxShadow: "0 18px 45px rgba(18, 38, 48, 0.10)",
   padding: "32px 28px 26px",
   backdropFilter: "blur(6px)",
+  transition: "all 0.25s ease",
 };
 
 const logoWrapStyle = {
   display: "flex",
   justifyContent: "center",
   marginBottom: "18px",
-};
-
-const logoPlaceholderStyle = {
-  width: "74px",
-  height: "74px",
-  borderRadius: "22px",
-  background: COLORS.frame,
-  color: COLORS.white,
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  fontWeight: 700,
-  fontSize: "17px",
-  fontFamily: '"Libre Baskerville", Georgia, serif',
-  boxShadow: "0 10px 24px rgba(26, 75, 93, 0.20)",
 };
 
 const headerBlockStyle = {
@@ -285,7 +340,6 @@ const tabStyle = {
 const activeTabStyle = {
   background: COLORS.frame,
   color: COLORS.white,
-  boxShadow: "0 6px 16px rgba(26, 75, 93, 0.18)",
 };
 
 const inactiveTabStyle = {
@@ -310,6 +364,7 @@ const inputStyle = {
   outline: "none",
   boxSizing: "border-box",
   fontFamily: '"Libre Baskerville", Georgia, serif',
+  transition: "all 0.2s ease",
 };
 
 const primaryButtonStyle = {
@@ -325,6 +380,7 @@ const primaryButtonStyle = {
   marginTop: "4px",
   boxShadow: "0 10px 24px rgba(230, 126, 126, 0.25)",
   fontFamily: '"Libre Baskerville", Georgia, serif',
+  transition: "all 0.2s ease",
 };
 
 const statusStyle = {
