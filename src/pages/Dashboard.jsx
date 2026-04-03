@@ -10,7 +10,7 @@ const SCRAPER_BASE_URL = "http://localhost:5050";
 const COLORS = {
   canvas: "#F9EAEA",
   ink: "#122630",
-  frame: "#1A4B5D",
+  frame: "#1A4B5D", // "rgb(26, 75, 93)",
   spark: "#E67E7E",
   status: "#F2C94C",
   accent: "#8E2424",
@@ -63,6 +63,8 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
   const [upStatus, setUpStatus] = useState("");
   
   const [isUploadHovered, setIsUploadHovered] = useState(false);
+  const [isGenerateHovered, setIsGenerateHovered] = useState(false);
+  const [isSyncHovered, setIsSyncHovered] = useState(false);
   const [isSearchHovered, setIsSearchHovered] = useState(false);
   const [isLogoutHovered, setIsLogoutHovered] = useState(false);
   const [isDarkToggleHovered, setIsDarkToggleHovered] = useState(false);
@@ -94,6 +96,12 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
   // edit state
   const [editOpen, setEditOpen] = useState(false);
   const [editBook, setEditBook] = useState(null);
+  const [audioOpen, setAudioOpen] = useState(false);
+  const [audioBook, setAudioBook] = useState(null);
+  const [syncOpen, setSyncOpen] = useState(false);
+  const [syncBook, setSyncBook] = useState(null);
+  const [syncSelection, setSyncSelection] = useState("default");
+  const [selectedVoiceLocal, setSelectedVoiceLocal] = useState("en-US-GuyNeural");
   const [editTitle, setEditTitle] = useState("");
   const [editAuthor, setEditAuthor] = useState("");
   const [editEpubFile, setEditEpubFile] = useState(null);
@@ -145,7 +153,6 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
     setEditStatus("");
     setEditOpen(true);
   };
-
   const closeEditModal = () => {
     setEditOpen(false);
     setEditBook(null);
@@ -154,6 +161,27 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
     setEditEpubFile(null);
     setEditAudioFile(null);
     setEditStatus("");
+  };
+
+  const openAudioModal = (book) => {
+    setAudioBook(book);
+    setSelectedVoiceLocal(book.generated_audio_voice || "en-US-GuyNeural");
+    setAudioOpen(true);
+  };
+  const closeAudioModal = () => {
+    setAudioOpen(false);
+    setAudioBook(null);
+  };
+
+  const openSyncModal = (book) => {
+    setSyncBook(book);
+    setSyncSelection("default");
+    setSyncOpen(true);
+  };
+
+  const closeSyncModal = () => {
+    setSyncOpen(false);
+    setSyncBook(null);
   };
 
   const saveEditedBook = async () => {
@@ -682,6 +710,8 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
             onPrepareLibrivoxAudio={prepareLibrivoxAudio}
             onEdit={openEditModal}
             onDelete={deleteBook}
+            onOpenAudio={() => openAudioModal(b)}
+            onOpenSync={() => openSyncModal(b)}
             onUpdateVoice={updateBookVoice}
             darkMode={darkMode}
           />
@@ -911,6 +941,173 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
             )}
           </div>
         </Modal>
+
+        <Modal open={audioOpen} onClose={closeAudioModal} title="Audio Settings">
+          {audioBook && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 800, color: THEME.mutedInk, textTransform: "uppercase", marginBottom: 8, display: "block" }}>
+                  Current Audio File
+                </label>
+                <div style={{ ...inputStyle, background: "rgba(18, 38, 48, 0.03)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span style={{ fontSize: 14 }}>
+                    {audioBook.audio_storage_path?.split('/').pop() || audioBook.audio_link?.split('/').pop() || "No audio file"}
+                  </span>
+                  <button onClick={() => { closeAudioModal(); openEditModal(audioBook); }} style={{ background: COLORS.frame, color: 'white', border: 'none', padding: '5px 10px', borderRadius: 8, cursor: 'pointer' }}>
+                    Replace
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 800, color: THEME.mutedInk, textTransform: "uppercase", marginBottom: 8, display: "block" }}>
+                  AI Voice Selection
+                </label>
+                <div style={{ display: "grid", gap: 8 }}>
+                  {AUDIO_VOICES.map((v) => (
+                    <div 
+                      key={v.value}
+                      onClick={() => setSelectedVoiceLocal(v.value)}
+                      style={{
+                        padding: "12px",
+                        borderRadius: 12,
+                        border: `2px solid ${selectedVoiceLocal === v.value ? COLORS.frame : COLORS.border}`,
+                        background: selectedVoiceLocal === v.value ? "rgba(26, 75, 93, 0.05)" : "white",
+                        cursor: "pointer",
+                        display: "flex",
+                        justifyContent: "space-between"
+                      }}
+                    >
+                      <span style={{ fontWeight: 600 }}>{v.label}</span>
+                      {selectedVoiceLocal === v.value && <span>✓</span>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <button 
+                style={{ 
+                  ...btnWide, 
+                  background: COLORS.frame,
+                  transition: "all 0.3s ease",
+                  transform: isGenerateHovered ? "translateY(-4px)" : "translateY(0)",
+                  boxShadow: isGenerateHovered 
+                    ? `0 10px 25px rgba(26, 75, 93, 0.35)` 
+                    : "none", 
+                }}
+                onMouseEnter={() => setIsGenerateHovered(true)}
+                onMouseLeave={() => setIsGenerateHovered(false)}
+                onClick={() => {
+                  updateBookVoice(audioBook.id, selectedVoiceLocal);
+                  generateAudiobook(audioBook.id);
+                  closeAudioModal();
+                }}
+              >
+                Generate Audiobook
+              </button>
+            </div>
+          )}
+        </Modal>
+
+        <Modal open={syncOpen} onClose={closeSyncModal} title="Sync">
+          {syncBook && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+              
+              {/* Section 1: Text File Info */}
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 800, color: THEME.mutedInk, textTransform: "uppercase", marginBottom: 8, display: "block" }}>
+                  Current Text File
+                </label>
+                <div style={{ ...inputStyle, background: "rgba(18, 38, 48, 0.03)", fontSize: 14 }}>
+                  {syncBook.title ? `${syncBook.title}.epub` : "No EPUB file"}
+                </div>
+              </div>
+
+              {/* Section 2: Audio Source Selection */}
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 800, color: THEME.mutedInk, textTransform: "uppercase", marginBottom: 8, display: "block" }}>
+                  Select Audio Source to Sync
+                </label>
+                <div style={{ display: "grid", gap: 8 }}>
+                  
+                  {/* Default Audio Option */}
+                  <div 
+                    onClick={() => setSyncSelection("default")}
+                    style={{
+                      padding: "12px",
+                      borderRadius: 12,
+                      border: `2px solid ${syncSelection === "default" ? COLORS.frame : COLORS.border}`,
+                      background: syncSelection === "default" ? "rgba(26, 75, 93, 0.05)" : "white",
+                      cursor: "pointer",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center"
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: 14 }}>Default Audio</div>
+                      <div style={{ fontSize: 12, color: COLORS.mutedInk }}>
+                        {syncBook.audio_storage_path?.split('/').pop() || syncBook.audio_link?.split('/').pop() || "Not uploaded"}
+                      </div>
+                    </div>
+                    {syncSelection === "default" && <span style={{ color: COLORS.frame, fontWeight: 900 }}>✓</span>}
+                  </div>
+
+                  {/* Generated Audio Option */}
+                  <div 
+                    onClick={() => setSyncSelection("generated")}
+                    style={{
+                      padding: "12px",
+                      borderRadius: 12,
+                      border: `2px solid ${syncSelection === "generated" ? COLORS.frame : COLORS.border}`,
+                      background: syncSelection === "generated" ? "rgba(26, 75, 93, 0.05)" : "white",
+                      cursor: "pointer",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      // Optional: Disable if no generated audio exists
+                      opacity: syncBook.generated_audio_tracks?.length > 0 ? 1 : 0.6,
+                      pointerEvents: syncBook.generated_audio_tracks?.length > 0 ? "auto" : "none"
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: 14 }}>Generated AI Audio</div>
+                      <div style={{ fontSize: 12, color: COLORS.mutedInk }}>
+                        {syncBook.generated_audio_tracks?.length > 0 
+                          ? `Voice: ${getVoiceLabel(syncBook.generated_audio_voice)}` 
+                          : "No AI audio generated"}
+                      </div>
+                    </div>
+                    {syncSelection === "generated" && <span style={{ color: COLORS.frame, fontWeight: 900 }}>✓</span>}
+                  </div>
+
+                </div>
+              </div>
+
+              {/* Sync Button */}
+              <button 
+                style={{ 
+                  ...btnWide, 
+                  background: COLORS.frame,
+                  transition: "all 0.3s ease",
+                  transform: isSyncHovered ? "translateY(-4px)" : "translateY(0)",
+                  boxShadow: isSyncHovered 
+                    ? `0 10px 25px rgba(26, 75, 93, 0.35)` 
+                    : "none", 
+                }}
+                onMouseEnter={() => setIsSyncHovered(true)}
+                onMouseLeave={() => setIsSyncHovered(false)}
+                onClick={() => {
+                  console.log(`Syncing ${syncSelection} for:`, syncBook.title);
+                  closeSyncModal();
+                }}
+              >
+                Sync
+              </button>
+            </div>
+          )}
+        </Modal>
+
       </div>
     
       <div style={{
@@ -1026,6 +1223,8 @@ function BookTile({
     onDelete,
     onGenerateAudiobook,
     onPrepareLibrivoxAudio,
+    onOpenAudio,
+    onOpenSync,
     onUpdateVoice,
     size,
     darkMode,
@@ -1058,8 +1257,15 @@ function BookTile({
         ? "Audio"
         : "Book";
   
+    // dynamic book size for each grid layout (small, medium, large)
+    const btnSize = {
+      small:  { fontSize: 9,  padding: "3px 6px",  borderRadius: 6,  gap: 3 },
+      medium: { fontSize: 11, padding: "6px 10px", borderRadius: 8,  gap: 5 },
+      large:  { fontSize: 13, padding: "8px 13px", borderRadius: 10, gap: 7 },
+    }[size] || { fontSize: 11, padding: "6px 10px", borderRadius: 8, gap: 5 };
+
     const actionButtonStyle = {
-      border: "1px solid rgba(255,255,255,0.18)",
+      /*border: "1px solid rgba(255,255,255,0.18)",
       background: COLORS.ink,
       color: "#fff",
       padding: "7px 10px",
@@ -1068,20 +1274,85 @@ function BookTile({
       cursor: "pointer",
       fontSize: 11,
       backdropFilter: "blur(4px)",
+      transition: "all 0.2s ease",*/
+      
+      /*background: COLORS.frame, // Not 100% white, lets a tiny bit of color through
+      backdropFilter: "blur(4px)",            // Softens the background behind the button
+      color: "#fff",                      // Your 'ink' color for text
+      border: "1px solid rgba(255,255,255,0.18)",
+      padding: "7px 10px",
+      borderRadius: 8,
+      fontWeight: 700,
+      cursor: "pointer",
+      fontSize: 11,
+      backdropFilter: "blur(4px)",
       transition: "all 0.2s ease",
+      ...btnSize,*/
+      /*background: "rgba(255,255,255,0.82)",
+      color: COLORS.ink,
+      border: `1px solid ${COLORS.border}`,
+      fontWeight: 700,
+      cursor: "pointer",
+      fontFamily: FONTS.ui,
+      letterSpacing: "0.02em",
+      boxShadow: "0 2px 8px rgba(18,38,48,0.08)",
+      transition: "all 0.3s ease",
+      ...btnSize,*/
+      background: COLORS.frame,
+      color: COLORS.white,
+      border: "1px solid transparent",
+      fontWeight: 700,
+      fontFamily: FONTS.ui,
+      fontSize: btnSize.fontSize,
+      padding: btnSize.padding,
+      borderRadius: 999,
+      cursor: "pointer",
+      boxShadow: "0 2px 8px rgba(18,38,48,0.08)",
+      transition: "all 0.3s ease",
     };
   
     const deleteButtonStyle = {
       ...actionButtonStyle,
-      background: "rgba(127,29,29,0.82)",
-      border: "1px solid rgba(254,202,202,0.35)",
+      background: COLORS.accent,
+      color: COLORS.white,
+      border: "1px solid transparent",
+    };
+
+    const disabledButtonStyle = {
+      ...actionButtonStyle,
+      /*background: "#E0E0E0", 
+      color: darkMode ? "#707070" : "#999999",
+      border: `1px solid rgba(18,38,48,0.06)`,
+      cursor: "pointer",
+      boxShadow: "none",*/
+      //backdropFilter: "blur(4px)",
+      //opacity: 1,
+      background: "rgba(18,38,48,0.15)",
+      color: "rgba(18,38,48,0.4)",
+      boxShadow: "none",
     };
   
     const [hoveredBtn, setHoveredBtn] = useState(null);
+    //const [activePanel, setActivePanel] = useState(null); // "audio" | "sync" | null
+    const [selectedVoiceLocal, setSelectedVoiceLocal] = useState(
+      book.generated_audio_voice || "en-US-GuyNeural"
+    );
   
     const hoverStyle = (id) => ({
+      //boxShadow: hoveredBtn === id ? "0 8px 20px rgba(26, 75, 93, 0.4)" : "none",
       transform: hoveredBtn === id ? "translateY(-3px)" : "translateY(0)",
-      boxShadow: hoveredBtn === id ? "0 8px 20px rgba(26, 75, 93, 0.4)" : "none",
+      /*boxShadow: hoveredBtn === id
+        ? "0 8px 20px rgba(26, 75, 93, 0.4)"
+        : "0 2px 8px rgba(18,38,48,0.10)",
+      background: hoveredBtn === id
+        ? (id === "delete" ? "rgba(142,36,36,0.2)" : COLORS.frame)
+        : undefined,
+      color: hoveredBtn === id && id !== "delete" ? COLORS.white : undefined,*/
+      boxShadow: hoveredBtn === id
+        ? id === "delete"
+          ? "0 8px 20px rgba(142,36,36,0.4)"
+          : "0 8px 20px rgba(26,75,93,0.4)"
+        : "0 2px 8px rgba(18,38,48,0.08)",
     });
   
     const coverStyle = book.cover_url
@@ -1096,6 +1367,72 @@ function BookTile({
             "linear-gradient(160deg, rgb(194, 211, 236) 0%, rgb(215, 232, 228) 55%, rgb(184, 204, 230) 100%)",
         };
   
+    /*const panelTitleStyle = {
+      fontFamily: FONTS.headings,
+      fontWeight: 800,
+      fontSize: 13,
+      color: darkMode ? "#e8e8f0" : COLORS.ink,  // ← uses ink not white
+      marginBottom: 10,
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+    };
+
+    const panelStyle = {
+      position: "absolute",
+      top: 0, left: 0, right: 0, bottom: 0,
+      background: darkMode ? "rgba(22,33,62,0.96)" : "rgba(249,234,234,0.96)",
+      backdropFilter: "none",
+      borderRadius: "2px 8px 8px 2px",
+      padding: 12,
+      overflowY: "auto",
+      zIndex: 10,
+      display: "flex",
+      flexDirection: "column",
+      gap: 10,
+    };*/
+
+    const sectionLabelStyle = {
+      fontSize: 10,
+      fontWeight: 800,
+      letterSpacing: "0.06em",
+      textTransform: "uppercase",
+      color: darkMode ? "rgba(232,232,240,0.5)" : COLORS.mutedInk,  // ← uses mutedInk
+      fontFamily: FONTS.ui,
+      marginBottom: 4,
+    };
+
+    const radioOptionStyle = {
+      display: "flex",
+      alignItems: "center",
+      gap: 7,
+      padding: "6px 8px",
+      borderRadius: 8,
+      cursor: "pointer",
+      border: `1px solid ${COLORS.border}`,
+      background: darkMode ? "rgba(255,255,255,0.05)" : "rgba(18,38,48,0.04)",
+      marginBottom: 4,
+      fontFamily: FONTS.ui,
+      fontSize: btnSize.fontSize,
+      color: darkMode ? "#f9fafb" : COLORS.ink,
+      transition: "background 0.15s ease",
+    };
+
+
+    const audioFileName =
+      book.audio_storage_path
+        ? book.audio_storage_path.split("/").pop()
+        : book.audio_link
+        ? book.audio_link.split("/").pop()
+        : null;
+
+    const epubFileName =
+      book.epub_storage_path
+        ? book.epub_storage_path.split("/").pop()
+        : book.epub_link
+        ? book.epub_link.split("/").pop()
+        : null;
+
     return (
       <div
         style={{
@@ -1118,29 +1455,22 @@ function BookTile({
             backgroundSize: "cover",
             backgroundPosition: "center",
           }}
-          onClick={() => navigate(`/reader/${book.id}`)}
+          onClick={() => hasEpub && navigate(`/reader/${book.id}`)}
           onMouseEnter={(e) => {
-            e.currentTarget.style.transform = "translateY(-4px)";
-            e.currentTarget.style.boxShadow = "0 16px 30px rgba(0,0,0,0.24)";
+            e.currentTarget.style.transform = "translateY(-8px)";
+            e.currentTarget.style.boxShadow = "0 20px 40px rgba(18,38,48,0.35), 0 8px 16px rgba(18,38,48,0.2)";
             const overlay = e.currentTarget.querySelector(".book-hover-overlay");
             if (overlay) overlay.style.opacity = "1";
           }}
           onMouseLeave={(e) => {
             e.currentTarget.style.transform = "translateY(0)";
-            e.currentTarget.style.boxShadow = "0 10px 24px rgba(0,0,0,0.18)";
+            e.currentTarget.style.boxShadow = "6px 8px 15px rgba(0,0,0,0.3), -1px 0 2px rgba(0,0,0,0.1)";
             const overlay = e.currentTarget.querySelector(".book-hover-overlay");
             if (overlay) overlay.style.opacity = "0";
+            //setActivePanel(null);
           }}
         >
-          <div
-            style={{
-              position: "absolute",
-              inset: 0,
-              pointerEvents: "none",
-              zIndex: 1,
-            }}
-          />
-  
+          {/* Badge that indicates if there's only EPUB/Audio/EPUB+Audio */}
           <div
             style={{
               position: "absolute",
@@ -1154,11 +1484,13 @@ function BookTile({
               padding: "5px 8px",
               borderRadius: 999,
               border: "1px solid rgba(17,24,39,0.08)",
+              zIndex: 2,
             }}
           >
             {badgeText}
           </div>
-  
+          
+          {/* ── Hover overlay ── */}
           <div
             className="book-hover-overlay"
             style={{
@@ -1166,142 +1498,138 @@ function BookTile({
               inset: 0,
               opacity: 0,
               transition: "opacity 0.18s ease",
+              background: "linear-gradient(to top, rgba(249,234,234,0.97) 55%, rgba(249,234,234,0.5) 100%)", //"rgba(255, 255, 255, 0.1)",
+              /*darkMode
+                ? "rgba(26, 75, 93, 0.2)" // COLORS.canvas with opacity
+                : "rgba(48, 50, 51, 0.2)" , // COLORS.canvas with */
+              backdropFilter: "blur(4px)",
+              WebkitBackdropFilter: "blur(8px)",
               display: "flex",
-              alignItems: "flex-end",
-              justifyContent: "center",
-              padding: 12,
+              flexDirection: "column",
+              alignItems: "center", //"flex-end",
+              justifyContent: "center", //"flex-start",
+              padding: 10,
+              zIndex: 3,
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: 10,
-                width: "100%",
-                alignItems: "center",
-              }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  gap: 8,
-                  flexWrap: "wrap",
-                  justifyContent: "center",
-                }}
-              >
+            {/* Left button column — hidden when a panel is open */}
+            {true && (
+              <div style={{ display: "flex", flexDirection: "column", height: "100%", width: "100%", boxSizing: "border-box" }}>
+                
+                {/* Row 1: Reader + Player side by side */}
+                <div style={{ display: "flex", gap: btnSize.gap }}>
+                  <button
+                    style={{ ...( hasEpub ? actionButtonStyle : disabledButtonStyle ), ...hoverStyle("reader"), flex: 1, textAlign: "center" }}
+                    onMouseEnter={() => setHoveredBtn("reader")}
+                    onMouseLeave={() => setHoveredBtn(null)}
+                    onClick={() => hasEpub ? navigate(`/reader/${book.id}`) : onEdit(book)}
+                  >
+                    {hasEpub ? "Reader" : "Upload Text"}
+                  </button>
+
+                  <button
+                    style={{ ...( (hasAudio || hasGeneratedAudio) ? actionButtonStyle : disabledButtonStyle ), ...hoverStyle("player"), flex: 1, textAlign: "center" }}
+                    onMouseEnter={() => setHoveredBtn("player")}
+                    onMouseLeave={() => setHoveredBtn(null)}
+                    onClick={() => (hasAudio || hasGeneratedAudio) ? navigate(`/player/${book.id}`) : onEdit(book)}
+                  >
+                    {(hasAudio || hasGeneratedAudio) ? "Player" : "Upload Audio"}
+                  </button>
+                </div>
+
+                <div style={{ flexGrow: 1 }} />
+
+                {/* Row 2: Audio full width */}
+                <div style={{ display: "flex", flexDirection: "column", gap: btnSize.gap }}>
                 <button
-                  style={{
-                    ...actionButtonStyle,
-                    ...hoverStyle("read"),
-                    opacity: !hasEpub ? 0.35 : 1,
-                    cursor: !hasEpub ? "not-allowed" : "pointer",
+                  style={{ ...actionButtonStyle, ...hoverStyle("audio"), display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center" }}
+                  onMouseEnter={() => setHoveredBtn("audio")}
+                  onMouseLeave={() => setHoveredBtn(null)}
+                  onClick={(e) => { e.stopPropagation(); onOpenAudio(); }}
+                >
+                  <svg 
+                    width="16" 
+                    height="16" 
+                    viewBox="0 0 24 24" 
+                    fill="none" 
+                    stroke="currentColor" 
+                    strokeWidth="2.5" 
+                    strokeLinecap="round" 
+                    strokeLinejoin="round" 
+                    // This margin keeps the icon from touching the text
+                    style={{ marginRight: '8px' }}
+                  >
+                    <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+                    <circle cx="12" cy="12" r="3" />
+                  </svg>
+                  <span>Audio</span>
+                </button>
+                
+
+                {/* Row 3: Sync full width */}
+                
+                <button
+                  style={{ ...actionButtonStyle, ...hoverStyle("sync"), display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center" }}
+                  onMouseEnter={() => setHoveredBtn("sync")}
+                  onMouseLeave={() => setHoveredBtn(null)}
+                  onClick={(e) => {
+                    e.stopPropagation(); // Prevent the reader from opening
+                    onOpenSync();        // Trigger the modal
                   }}
-                  onMouseEnter={() => hasEpub && setHoveredBtn("read")}
-                  onMouseLeave={() => setHoveredBtn(null)}
-                  onClick={() => hasEpub && navigate(`/reader/${book.id}`)}
                 >
-                  Reader
+                  <svg 
+                    width="16" 
+                    height="16" 
+                    viewBox="0 0 24 24" 
+                    fill="none" 
+                    stroke="currentColor" 
+                    strokeWidth="2.5" 
+                    strokeLinecap="round" 
+                    strokeLinejoin="round" 
+                    style={{ marginRight: '8px' }}
+                  >
+                    <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                    <path d="M3 3v5h5" />
+                    <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
+                    <path d="M16 16h5v5" />
+                  </svg>
+                  <span>Sync</span>
                 </button>
-  
-                <button
-                  style={{
-                    ...actionButtonStyle,
-                    ...hoverStyle("listen"),
-                    opacity: !(hasAudio || hasGeneratedAudio) ? 0.35 : 1,
-                    cursor: !(hasAudio || hasGeneratedAudio) ? "not-allowed" : "pointer",
-                  }}
-                  onMouseEnter={() => (hasAudio || hasGeneratedAudio) && setHoveredBtn("listen")}
-                  onMouseLeave={() => setHoveredBtn(null)}
-                  onClick={() => (hasAudio || hasGeneratedAudio) && navigate(`/player/${book.id}`)}
-                >
-                  Player
-                </button>
-  
-                <button
-                  style={{ ...actionButtonStyle, ...hoverStyle("edit") }}
-                  onMouseEnter={() => setHoveredBtn("edit")}
-                  onMouseLeave={() => setHoveredBtn(null)}
-                  onClick={() => onEdit(book)}
-                >
-                  Edit
-                </button>
-  
-                <button
-                  style={{ ...deleteButtonStyle, ...hoverStyle("delete") }}
-                  onMouseEnter={() => setHoveredBtn("delete")}
-                  onMouseLeave={() => setHoveredBtn(null)}
-                  onClick={() => onDelete(book)}
-                >
-                  Delete
-                </button>
-  
-                <button
-                  style={{
-                    ...actionButtonStyle,
-                    ...hoverStyle("generate"),
-                    opacity: isGenerating ? 0.65 : 1,
-                    cursor: isGenerating ? "not-allowed" : "pointer",
-                  }}
-                  onMouseEnter={() => !isGenerating && setHoveredBtn("generate")}
-                  onMouseLeave={() => setHoveredBtn(null)}
-                  onClick={() => !isGenerating && onGenerateAudiobook(book.id)}
-                >
-                  {isGenerating
-                    ? "Generating..."
-                    : isReady
-                    ? "Regenerate Audio"
-                    : "Generate Audiobook"}
-                </button>
-  
-                <button
-                  style={{ ...actionButtonStyle, ...hoverStyle("librivox") }}
-                  onMouseEnter={() => setHoveredBtn("librivox")}
-                  onMouseLeave={() => setHoveredBtn(null)}
-                  onClick={() => onPrepareLibrivoxAudio(book.id)}
-                >
-                  Prepare LibriVox Audio
-                </button>
+                </div>
+
+                <div style={{ flexGrow: 1 }} />
+
+                {/* Row 4: Edit + Delete side by side */}
+                <div style={{ display: "flex", gap: btnSize.gap }}>
+                  <button
+                    style={{ ...actionButtonStyle, ...hoverStyle("edit"), flex: 1, textAlign: "center" }}
+                    onMouseEnter={() => setHoveredBtn("edit")}
+                    onMouseLeave={() => setHoveredBtn(null)}
+                    onClick={() => onEdit(book)}
+                  >
+                    Edit
+                  </button>
+
+                  <button
+                    style={{ ...deleteButtonStyle, ...hoverStyle("delete"), flex: 1, textAlign: "center" }}
+                    onMouseEnter={() => setHoveredBtn("delete")}
+                    onMouseLeave={() => setHoveredBtn(null)}
+                    onClick={() => onDelete(book)}
+                  >
+                    Delete
+                  </button>
+                </div>
+
               </div>
-  
-              <div style={{ width: "100%" }}>
-  
-                <label
-                  style={{
-                    display: "block",
-                    marginBottom: 6,
-                    fontSize: 12,
-                    fontWeight: 700,
-                    color: "#f9fafb",
-                  }}
-                >
-                  Narrator Voice
-                </label>
-  
-                <select
-                  value={book.generated_audio_voice || "en-US-GuyNeural"}
-                  onChange={(e) => onUpdateVoice(book.id, e.target.value)}
-                  style={{
-                    width: "100%",
-                    padding: "8px 10px",
-                    borderRadius: 10,
-                    border: "1px solid rgba(255,255,255,0.18)",
-                    fontSize: 12,
-                    background: darkMode ? "#16213e" : "#ffffff",
-                    color: darkMode ? "#e8e8f0" : "#122630",
-                  }}
-                >
-                  {AUDIO_VOICES.map((voice) => (
-                    <option key={voice.value} value={voice.value}>
-                      {voice.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
+            )}
+
+            
+            
           </div>
         </div>
-  
+
+        {/* Below-card info */}
         <div
           style={{
             width: config.width,
@@ -1327,55 +1655,35 @@ function BookTile({
           >
             {book.title || "(Untitled)"}
           </div>
-  
-          <div
-            style={{
-              fontSize: config.fontSize - 2,
-              color: mutedColor,
-              lineHeight: 1.3,
-            }}
-          >
+
+          <div style={{ fontSize: config.fontSize - 2, color: mutedColor, lineHeight: 1.3 }}>
             {book.author || "Unknown"}
           </div>
-  
-          {book.generated_audio_voice && (
-            <div style={{ marginTop: 6, fontSize: 11, color: mutedColor }}>
-              Voice: {getVoiceLabel(book.generated_audio_voice)}
-            </div>
-          )}
-  
+
           {isGenerating && (
             <div style={{ marginTop: 8 }}>
               <div style={{ fontSize: 11, color: mutedColor, marginBottom: 4 }}>
                 Generating audiobook… {generationCurrent}/{generationTotal}
               </div>
-              <div
-                style={{
-                  width: "100%",
-                  height: 8,
-                  background: darkMode ? "rgba(255,255,255,0.12)" : "#e5e7eb",
-                  borderRadius: 999,
-                  overflow: "hidden",
-                }}
-              >
-                <div
-                  style={{
-                    width: `${generationProgress}%`,
-                    height: "100%",
-                    background: COLORS.frame,
-                    transition: "width 0.3s ease",
-                  }}
-                />
+              <div style={{
+                width: "100%", height: 8,
+                background: darkMode ? "rgba(255,255,255,0.12)" : "#e5e7eb",
+                borderRadius: 999, overflow: "hidden",
+              }}>
+                <div style={{
+                  width: `${generationProgress}%`, height: "100%",
+                  background: COLORS.frame, transition: "width 0.3s ease",
+                }} />
               </div>
             </div>
           )}
-  
+
           {isReady && (
             <div style={{ marginTop: 8, fontSize: 11, color: "#16a34a", fontWeight: 700 }}>
-              Audiobook ready — open Reader to listen
+              Audiobook ready ✓
             </div>
           )}
-  
+
           {isError && (
             <div style={{ marginTop: 8, fontSize: 11, color: "#b91c1c" }}>
               Audio generation failed
@@ -1385,6 +1693,10 @@ function BookTile({
       </div>
     );
   }
+          
+
+   
+
 function SearchResultCard({ book, onAddEpub, onFindAudio, onAddAudio, onAddBoth }) {
   const [rowStatus, setRowStatus] = useState("");
   const [audioLink, setAudioLink] = useState("");
