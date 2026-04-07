@@ -58,6 +58,9 @@ export default function Reader({ darkMode, setDarkMode }) {
   const [fontSize, setFontSize] = useState(100);
   const [fontFamily, setFontFamily] = useState('"Libre Baskerville", Georgia, serif');
   const [spread, setSpread] = useState("none");
+  const fontFamilyRef = useRef(fontFamily);
+  const fontSizeRef = useRef(fontSize);
+  const darkModeRef = useRef(darkMode);
 
   const [hoverPrev, setHoverPrev] = useState(false);
   const [hoverNext, setHoverNext] = useState(false);
@@ -116,6 +119,11 @@ export default function Reader({ darkMode, setDarkMode }) {
     const unsub = onAuthStateChanged(auth, (u) => setUser(u));
     return () => unsub();
   }, []);
+  useEffect(() => {
+    fontFamilyRef.current = fontFamily;
+    fontSizeRef.current = fontSize;
+    darkModeRef.current = darkMode;
+  }, [fontFamily, fontSize, darkMode]);
 
   useEffect(() => {
     if (!bookId) return;
@@ -439,22 +447,26 @@ export default function Reader({ darkMode, setDarkMode }) {
 
   const forceVisibleContents = () => {
     const contentsArr = renditionRef.current?.getContents?.() || [];
-
+  
     contentsArr.forEach((contents) => {
       try {
         const doc = contents.document;
         const html = doc.documentElement;
         const body = doc.body;
         if (!body) return;
-
-        html.style.background = darkMode ? "#1a1a2e" : COLORS.canvas;
-        html.style.color = darkMode ? "#e8e8f0" : "#122630";
-
-        body.style.background = darkMode ? "#1a1a2e" : COLORS.canvas;
-        body.style.color = darkMode ? "#e8e8f0" : "#122630";
-        body.style.fontFamily = fontFamily;
+  
+        const isDark = darkModeRef.current;
+        const currentFontFamily = fontFamilyRef.current;
+        const currentFontSize = fontSizeRef.current;
+  
+        html.style.background = isDark ? "#1a1a2e" : COLORS.canvas;
+        html.style.color = isDark ? "#e8e8f0" : "#122630";
+  
+        body.style.background = isDark ? "#1a1a2e" : COLORS.canvas;
+        body.style.color = isDark ? "#e8e8f0" : "#122630";
+        body.style.fontFamily = currentFontFamily;
         body.style.lineHeight = "1.7";
-        body.style.fontSize = `${fontSize}%`;
+        body.style.fontSize = `${currentFontSize}%`;
         body.style.margin = "0";
         body.style.padding = "24px";
         body.style.maxWidth = "none";
@@ -462,10 +474,10 @@ export default function Reader({ darkMode, setDarkMode }) {
         body.style.opacity = "1";
         body.style.visibility = "visible";
         body.style.display = "block";
-
+  
         const all = body.querySelectorAll("*");
         all.forEach((el) => {
-          el.style.color = darkMode ? "#e8e8f0" : "#122630";
+          el.style.color = isDark ? "#e8e8f0" : "#122630";
           el.style.backgroundColor = "transparent";
           el.style.opacity = "1";
           el.style.visibility = "visible";
@@ -482,10 +494,10 @@ export default function Reader({ darkMode, setDarkMode }) {
   const applyTheme = (renditionInstance) => {
     renditionInstance.themes.default({
       body: {
-        background: darkMode ? "#1a1a2e" : COLORS.canvas,
-        color: darkMode ? "#e8e8f0" : "#122630",
-        "font-family": fontFamily,
-        "font-size": `${fontSize}%`,
+        background: darkModeRef.current ? "#1a1a2e" : COLORS.canvas,
+        color: darkModeRef.current ? "#e8e8f0" : "#122630",
+        "font-family": fontFamilyRef.current,
+        "font-size": `${fontSizeRef.current}%`,
         "line-height": "1.7",
         margin: "0",
         padding: "24px",
@@ -497,8 +509,9 @@ export default function Reader({ darkMode, setDarkMode }) {
       div: { "font-size": "1em" },
       span: { "font-size": "1em" },
     });
-
-    renditionInstance.themes.fontSize(`${fontSize}%`);
+  
+    renditionInstance.themes.font(fontFamilyRef.current);
+    renditionInstance.themes.fontSize(`${fontSizeRef.current}%`);
   };
 
   const displayFirstWorkingSpineItem = async (book, rendition) => {
@@ -585,13 +598,18 @@ export default function Reader({ darkMode, setDarkMode }) {
             const html = doc.documentElement;
             const body = doc.body;
             if (!body) return;
-
-            html.style.background = darkMode ? "#1a1a2e" : COLORS.canvas;
-            html.style.color = darkMode ? "#e8e8f0" : "#122630";
-
-            body.style.background = darkMode ? "#1a1a2e" : COLORS.canvas;
-            body.style.color = darkMode ? "#e8e8f0" : "#122630";
-            body.style.fontFamily = fontFamily;
+        
+            const isDark = darkModeRef.current;
+            const currentFontFamily = fontFamilyRef.current;
+            const currentFontSize = fontSizeRef.current;
+        
+            html.style.background = isDark ? "#1a1a2e" : COLORS.canvas;
+            html.style.color = isDark ? "#e8e8f0" : "#122630";
+        
+            body.style.background = isDark ? "#1a1a2e" : COLORS.canvas;
+            body.style.color = isDark ? "#e8e8f0" : "#122630";
+            body.style.fontFamily = currentFontFamily;
+            body.style.fontSize = `${currentFontSize}%`;
             body.style.lineHeight = "1.7";
             body.style.margin = "0";
             body.style.padding = "24px";
