@@ -18,21 +18,19 @@ const COLORS = {
   border: "rgba(18, 38, 48, 0.12)",
   mutedInk: "rgba(18, 38, 48, 0.72)",
 };
+
 const AUDIO_VOICES = [
-    { value: "en-US-GuyNeural", label: "US Male Narrator" },
-    { value: "en-US-JennyNeural", label: "US Female Narrator" },
-    { value: "en-GB-RyanNeural", label: "UK Male Narrator" },
-    { value: "en-GB-SoniaNeural", label: "UK Female Narrator" },
-  ];
+  { value: "en-US-GuyNeural", label: "US Male Narrator" },
+  { value: "en-US-JennyNeural", label: "US Female Narrator" },
+  { value: "en-GB-RyanNeural", label: "UK Male Narrator" },
+  { value: "en-GB-SoniaNeural", label: "UK Female Narrator" },
+];
 
 const FONTS = {
   headings: '"Merriweather", serif',
   ui: '"Inter", sans-serif',
   reading: '"Source Serif 4", serif',
-  //ui: '"Inter", "Helvetica Neue", Arial, sans-serif',
-  //reading: '"Libre Baskerville", Georgia, serif',
 };
-
 
 const GRID_CONFIGS = {
   small: { width: 110, height: 165, gap: 16, fontSize: 11, lineClamp: 2 },
@@ -46,22 +44,21 @@ const generateBookId = (title) =>
 const coverFromGutendex = (formats) => formats?.["image/jpeg"] || "";
 const epubFromGutendex = (formats) => formats?.["application/epub+zip"] || "";
 const getVoiceLabel = (value) =>
-    AUDIO_VOICES.find((v) => v.value === value)?.label || value;
+  AUDIO_VOICES.find((v) => v.value === value)?.label || value;
 
 export default function Dashboard({ user, darkMode, setDarkMode }) {
-  const [gridSize, setGridSize] = useState("medium"); 
+  const [gridSize, setGridSize] = useState("medium");
   const [sortBy, setSortBy] = useState("recent");
   const [books, setBooks] = useState([]);
   const [modalOpen, setModalOpen] = useState(false);
-  const [tab, setTab] = useState("upload"); // upload/search
+  const [tab, setTab] = useState("upload");
 
-  // upload state
   const [upTitle, setUpTitle] = useState("");
   const [upAudioFile, setUpAudioFile] = useState(null);
   const [upAuthor, setUpAuthor] = useState("");
   const [upFile, setUpFile] = useState(null);
   const [upStatus, setUpStatus] = useState("");
-  
+
   const [isUploadHovered, setIsUploadHovered] = useState(false);
   const [isGenerateHovered, setIsGenerateHovered] = useState(false);
   const [isSyncHovered, setIsSyncHovered] = useState(false);
@@ -71,29 +68,28 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
   const [isSaveHovered, setIsSaveHovered] = useState(false);
   const [selectedVoice, setSelectedVoice] = useState("en-US-GuyNeural");
 
-  
-  const THEME = darkMode ? {
-    canvas: "#1a1a2e",
-    ink: "#e8e8f0",
-    frame: "#4a9eba",
-    mutedInk: "rgba(232,232,240,0.65)",
-    white: "#16213e",
-    border: "rgba(232,232,240,0.12)",
-  } : {
-    canvas: COLORS.canvas,
-    ink: COLORS.ink,
-    frame: COLORS.frame,
-    mutedInk: COLORS.mutedInk,
-    white: COLORS.white,
-    border: COLORS.border,
-  };
+  const THEME = darkMode
+    ? {
+        canvas: "#1a1a2e",
+        ink: "#e8e8f0",
+        frame: "#4a9eba",
+        mutedInk: "rgba(232,232,240,0.65)",
+        white: "#16213e",
+        border: "rgba(232,232,240,0.12)",
+      }
+    : {
+        canvas: COLORS.canvas,
+        ink: COLORS.ink,
+        frame: COLORS.frame,
+        mutedInk: COLORS.mutedInk,
+        white: COLORS.white,
+        border: COLORS.border,
+      };
 
-  // search state
   const [q, setQ] = useState("");
   const [searchStatus, setSearchStatus] = useState("");
   const [results, setResults] = useState([]);
 
-  // edit state
   const [editOpen, setEditOpen] = useState(false);
   const [editBook, setEditBook] = useState(null);
   const [audioOpen, setAudioOpen] = useState(false);
@@ -110,6 +106,7 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
   const [hoveredSize, setHoveredSize] = useState(null);
 
   const booksCol = useMemo(() => collection(db, "Users", user.uid, "Books"), [user.uid]);
+
   const sortedBooks = useMemo(() => {
     const list = [...books];
     if (sortBy === "title-asc") list.sort((a, b) => (a.title || "").localeCompare(b.title || ""));
@@ -117,27 +114,27 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
     if (sortBy === "author-asc") list.sort((a, b) => (a.author || "").localeCompare(b.author || ""));
     if (sortBy === "author-desc") list.sort((a, b) => (b.author || "").localeCompare(a.author || ""));
     if (sortBy === "recent") list.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-    if (sortBy === "epub") return list.filter(b => !!b.epub_link || !!b.epub_storage_path);
-    if (sortBy === "audio") return list.filter(b => !!b.audio_link || !!b.audio_storage_path);
+    if (sortBy === "epub") return list.filter((b) => !!b.epub_link || !!b.epub_storage_path);
+    if (sortBy === "audio") return list.filter((b) => !!b.audio_link || !!b.audio_storage_path);
     return list;
   }, [books, sortBy]);
+
   useEffect(() => {
     const unsub = onSnapshot(booksCol, (snap) => {
       const list = [];
       snap.forEach((d) => list.push({ id: d.id, ...d.data() }));
       setBooks(list);
     });
-  
+
     return () => unsub();
   }, [booksCol]);
 
   const logout = async () => {
     const confirmed = window.confirm("Are you sure you want to log out?");
-
     if (confirmed) {
       try {
         await signOut(auth);
-        navigate("/"); 
+        navigate("/");
       } catch (error) {
         console.error("Logout failed:", error);
       }
@@ -239,7 +236,6 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
     }
   };
 
-  // upload manually
   const uploadManualFiles = async () => {
     setUpStatus("");
     if (!upTitle.trim()) {
@@ -303,7 +299,6 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
             audio_storage_path: audioPath,
             audio_source: "upload",
             updatedAt: serverTimestamp(),
-
           },
           { merge: true }
         );
@@ -354,22 +349,23 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
       setSearchStatus("Search failed: " + e.message);
     }
   };
+
   const prepareLibrivoxAudio = async (bookId) => {
     try {
       const res = await fetch("http://127.0.0.1:5002/prepare-librivox-audio", {
         method: "POST",
         headers: {
-          "Content-Type": "application/json"
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({
           uid: user.uid,
-          bookId
-        })
+          bookId,
+        }),
       });
-  
+
       const data = await res.json();
       console.log("prepare-librivox-audio:", data);
-  
+
       if (!res.ok) {
         alert(data.error || "Failed to prepare LibriVox audio.");
       }
@@ -378,34 +374,36 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
       alert("Could not reach LibriVox audio processor: " + e.message);
     }
   };
+
   const generateAudiobook = async (bookId) => {
     try {
       const res = await fetch("http://127.0.0.1:5002/generate-audio", {
         method: "POST",
         headers: {
-          "Content-Type": "application/json"
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({
           uid: user.uid,
-          bookId
-        })
+          bookId,
+        }),
       });
-  
+
       const data = await res.json();
       console.log("generate-audio status:", res.status);
       console.log("generate-audio data:", data);
-  
+
       if (!res.ok) {
         alert(data.error || "Audio generation failed.");
         return;
       }
-  
+
       alert(`Audiobook generated with ${data.voice || "selected voice"}.`);
     } catch (e) {
       console.error("generateAudiobook error:", e);
       alert("Could not reach audio generator: " + e.message);
     }
   };
+
   const updateBookVoice = async (bookId, voice) => {
     try {
       await setDoc(
@@ -421,28 +419,29 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
       alert("Failed to update voice: " + e.message);
     }
   };
+
   const addEpub = async (book) => {
     const id = generateBookId(book.title);
     await setDoc(
-        doc(db, "Users", user.uid, "Books", id),
-        {
-          title: book.title,
-          author: book.author,
-          cover_url: book.cover_url || "",
-          epub_link: book.epub_link,
-          epub_preview_url: book.epub_preview_url || "",
-          generated_audio_status: "idle",
-          generated_audio_progress: 0,
-          generated_audio_current: 0,
-          generated_audio_total: 0,
-          generated_audio_tracks: [],
-          generated_audio_error: null,
-          generated_audio_voice: selectedVoice,
-          updatedAt: serverTimestamp(),
-          createdAt: serverTimestamp(),
-        },
-        { merge: true }
-      );
+      doc(db, "Users", user.uid, "Books", id),
+      {
+        title: book.title,
+        author: book.author,
+        cover_url: book.cover_url || "",
+        epub_link: book.epub_link,
+        epub_preview_url: book.epub_preview_url || "",
+        generated_audio_status: "idle",
+        generated_audio_progress: 0,
+        generated_audio_current: 0,
+        generated_audio_total: 0,
+        generated_audio_tracks: [],
+        generated_audio_error: null,
+        generated_audio_voice: selectedVoice,
+        updatedAt: serverTimestamp(),
+        createdAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
   };
 
   const findAudio = async (title) => {
@@ -511,6 +510,7 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
               Your personal bookshelf
             </p>
           </div>
+
           <div
             style={{
               display: "flex",
@@ -537,50 +537,43 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
             >
               {user.email}
             </span>
+
             <button
               onClick={logout}
               onMouseEnter={() => setIsLogoutHovered(true)}
               onMouseLeave={() => setIsLogoutHovered(false)}
               style={{
-                background: COLORS.frame, // Midnight Navy default
+                background: COLORS.frame,
                 color: COLORS.white,
                 fontFamily: FONTS.ui,
                 fontSize: 13,
                 fontWeight: 600,
                 lineHeight: 2,
-                // Shape & Spacing
                 border: "none",
                 borderRadius: 12,
                 width: 42,
                 height: 42,
-                padding: 0,//"10px 12px",
-                
+                padding: 0,
                 cursor: "pointer",
-
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                
-                // Interaction & Animation
                 transition: "all 0.3s ease",
                 transform: isLogoutHovered ? "translateY(-3px)" : "translateY(0)",
-                
-                // Blue Shadow Highlight
-                boxShadow: isLogoutHovered 
-                  ? "0 8px 20px rgba(26, 75, 93, 0.4)" // Navy highlight
+                boxShadow: isLogoutHovered
+                  ? "0 8px 20px rgba(26, 75, 93, 0.4)"
                   : "0 2px 8px rgba(18, 38, 48, 0.08)",
-                
               }}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
-                <polyline points="16 17 21 12 16 7"/>
-                <line x1="21" y1="12" x2="9" y2="12"/>
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                <polyline points="16 17 21 12 16 7" />
+                <line x1="21" y1="12" x2="9" y2="12" />
               </svg>
             </button>
 
             <button
-              onClick={() => setDarkMode(d => !d)}
+              onClick={() => setDarkMode((d) => !d)}
               onMouseEnter={() => setIsDarkToggleHovered(true)}
               onMouseLeave={() => setIsDarkToggleHovered(false)}
               style={{
@@ -593,7 +586,6 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
                 display: "flex",
                 alignItems: "center",
                 gap: "6px",
-                
                 cursor: "pointer",
                 fontFamily: FONTS.ui,
                 fontWeight: 600,
@@ -611,16 +603,25 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
             </button>
           </div>
         </div>
-        
-        <div style={{ margin: "18px 0 12px", display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}> 
+
+        <div style={{ margin: "18px 0 12px", display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
           <h2 style={{ margin: 0, fontSize: 18, color: THEME.ink, fontFamily: FONTS.headings }}>
             My Bookshelf
           </h2>
-          <p style={{ margin: "6px 0 0", color: COLORS.mutedInk, fontSize: 13, fontFamily: FONTS.ui }}>
-          </p>
+          <p style={{ margin: "6px 0 0", color: COLORS.mutedInk, fontSize: 13, fontFamily: FONTS.ui }} />
         </div>
 
-        <div style={{ display: "flex", width: "100%", boxSizing: "border-box", gap: 6, background: darkMode ? "rgba(255,255,255,0.08)" : "rgba(18, 38, 48, 0.06)", padding: 4, borderRadius: 10 }}>
+        <div
+          style={{
+            display: "flex",
+            width: "100%",
+            boxSizing: "border-box",
+            gap: 6,
+            background: darkMode ? "rgba(255,255,255,0.08)" : "rgba(18, 38, 48, 0.06)",
+            padding: 4,
+            borderRadius: 10,
+          }}
+        >
           {["small", "medium", "large"].map((size) => (
             <button
               key={size}
@@ -632,25 +633,38 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
                 fontSize: 11,
                 borderRadius: 999,
                 cursor: "pointer",
-                border: gridSize === size
-                  ? "1px solid rgba(242, 201, 76, 0.55)"
-                  : "1px solid transparent",
-                background: gridSize === size
-                  ? (darkMode ? COLORS.status : COLORS.frame)
-                  : hoveredSize === size
-                    ? darkMode ? "rgba(255,255,255,0.1)" : "rgba(18,38,48,0.08)"
+                border:
+                  gridSize === size
+                    ? "1px solid rgba(242, 201, 76, 0.55)"
+                    : "1px solid transparent",
+                background:
+                  gridSize === size
+                    ? darkMode
+                      ? COLORS.status
+                      : COLORS.frame
+                    : hoveredSize === size
+                    ? darkMode
+                      ? "rgba(255,255,255,0.1)"
+                      : "rgba(18,38,48,0.08)"
                     : "transparent",
-                color: gridSize === size
-                  ? (darkMode ? COLORS.ink : COLORS.white)
-                  : THEME.ink,
+                color:
+                  gridSize === size
+                    ? darkMode
+                      ? COLORS.ink
+                      : COLORS.white
+                    : THEME.ink,
                 fontWeight: gridSize === size ? "700" : "400",
-                boxShadow: gridSize === size
-                  ? "0 0 0 1px rgba(242, 201, 76, 0.18)"
-                  : hoveredSize === size
+                boxShadow:
+                  gridSize === size
+                    ? "0 0 0 1px rgba(242, 201, 76, 0.18)"
+                    : hoveredSize === size
                     ? "0 8px 20px rgba(26, 75, 93, 0.4)"
                     : "none",
                 transition: "all 0.3s ease",
-                transform: hoveredSize === size && gridSize !== size ? "translateY(-3px)" : "translateY(0)",
+                transform:
+                  hoveredSize === size && gridSize !== size
+                    ? "translateY(-3px)"
+                    : "translateY(0)",
                 fontFamily: FONTS.ui,
               }}
             >
@@ -660,7 +674,9 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "12px 0" }}>
-          <span style={{ fontSize: 13, color: COLORS.mutedInk, fontFamily: FONTS.ui }}>Sort by:</span>
+          <span style={{ fontSize: 13, color: COLORS.mutedInk, fontFamily: FONTS.ui }}>
+            Sort by:
+          </span>
           <select
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value)}
@@ -686,12 +702,14 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
           </select>
         </div>
 
-        <div style={{ 
-          display: "grid", 
-          gridTemplateColumns: `repeat(auto-fill, ${GRID_CONFIGS[gridSize].width}px)`, 
-          gap: GRID_CONFIGS[gridSize].gap,
-          justifyContent: "center" 
-        }}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: `repeat(auto-fill, ${GRID_CONFIGS[gridSize].width}px)`,
+            gap: GRID_CONFIGS[gridSize].gap,
+            justifyContent: "center",
+          }}
+        >
           <AddTile
             size={gridSize}
             darkMode={darkMode}
@@ -700,9 +718,10 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
               setModalOpen(true);
             }}
           />
-        
-        {sortedBooks.map((b) => (
+
+          {sortedBooks.map((b) => (
             <BookTile
+<<<<<<< HEAD
             key={b.id}
             size={gridSize}
             book={b}
@@ -716,6 +735,19 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
             darkMode={darkMode}
           />
             ))}
+=======
+              key={b.id}
+              size={gridSize}
+              book={b}
+              onGenerateAudiobook={generateAudiobook}
+              onPrepareLibrivoxAudio={prepareLibrivoxAudio}
+              onEdit={openEditModal}
+              onDelete={deleteBook}
+              onUpdateVoice={updateBookVoice}
+              darkMode={darkMode}
+            />
+          ))}
+>>>>>>> a24ed1f7df674f991f3f1e741c97154b02acdc2b
         </div>
 
         <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="Add a new book">
@@ -739,6 +771,7 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
                     placeholder="e.g., Pride and Prejudice"
                   />
                 </Field>
+
                 <Field label="Author">
                   <input
                     style={inputStyle}
@@ -747,6 +780,7 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
                     placeholder="e.g., Jane Austen"
                   />
                 </Field>
+
                 <Field label="Audio file (mp3/zip/m4b)">
                   <input
                     style={inputStyle}
@@ -766,36 +800,34 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
                 />
               </Field>
 
-              <button 
-                onClick={uploadManualFiles} 
+              <button
+                onClick={uploadManualFiles}
                 onMouseEnter={() => setIsUploadHovered(true)}
                 onMouseLeave={() => setIsUploadHovered(false)}
-                style={{ 
-                  ...btnWide, 
-                  background: COLORS.frame, 
+                style={{
+                  ...btnWide,
+                  background: COLORS.frame,
                   cursor: "pointer",
                   border: "none",
                   color: "#FFFFFF",
-                  // --- HOVER LOGIC ---
                   transition: "all 0.3s ease",
                   transform: isUploadHovered ? "translateY(-4px)" : "translateY(0)",
-                  boxShadow: isUploadHovered 
-                    ? `0 10px 25px rgba(26, 75, 93, 0.35)` // Crimson Shadow
-                    : "none",
-                  }}
+                  boxShadow: isUploadHovered ? `0 10px 25px rgba(26, 75, 93, 0.35)` : "none",
+                }}
               >
                 Upload EPUB / Audiobook
               </button>
+
               {upStatus && (
                 <p
-                style={{
-                  marginTop: 12,
-                  color: upStatus.startsWith("Upload failed") ? COLORS.accent : COLORS.mutedInk,
-                  fontSize: 13,
-                  fontFamily: FONTS.ui,
-                }}
-              >
-                {upStatus}
+                  style={{
+                    marginTop: 12,
+                    color: upStatus.startsWith("Upload failed") ? COLORS.accent : COLORS.mutedInk,
+                    fontSize: 13,
+                    fontFamily: FONTS.ui,
+                  }}
+                >
+                  {upStatus}
                 </p>
               )}
             </div>
@@ -811,26 +843,25 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
                   placeholder="Search by title, author…"
                 />
               </Field>
-              <button 
-                onClick={searchGutenberg} 
+
+              <button
+                onClick={searchGutenberg}
                 onMouseEnter={() => setIsSearchHovered(true)}
                 onMouseLeave={() => setIsSearchHovered(false)}
-                style={{ 
+                style={{
                   ...btnWide,
                   background: COLORS.frame,
                   cursor: "pointer",
                   border: "none",
                   color: "#FFFFFF",
-                  // --- HOVER LOGIC ---
                   transition: "all 0.3s ease",
                   transform: isSearchHovered ? "translateY(-4px)" : "translateY(0)",
-                  boxShadow: isSearchHovered 
-                    ? `0 10px 25px rgba(26, 75, 93, 0.35)` // Navy Shadow
-                    : "none", 
+                  boxShadow: isSearchHovered ? `0 10px 25px rgba(26, 75, 93, 0.35)` : "none",
                 }}
               >
                 Search
               </button>
+
               {searchStatus && (
                 <p
                   style={{
@@ -908,12 +939,12 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
               />
             </Field>
 
-            <button 
-              onClick={saveEditedBook} 
+            <button
+              onClick={saveEditedBook}
               onMouseEnter={() => setIsSaveHovered(true)}
               onMouseLeave={() => setIsSaveHovered(false)}
-              style={{ 
-                ...btnWide, 
+              style={{
+                ...btnWide,
                 background: COLORS.frame,
                 color: COLORS.white,
                 cursor: "pointer",
@@ -923,7 +954,6 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
                 boxShadow: isSaveHovered
                   ? "0 8px 20px rgba(26, 75, 93, 0.4)"
                   : "0 2px 8px rgba(18, 38, 48, 0.08)",
-
               }}
             >
               Save Changes
@@ -1110,15 +1140,17 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
         </Modal>
 
       </div>
-    
-      <div style={{
-        textAlign: "center",
-        padding: "20px 0 32px",
-        fontFamily: FONTS.ui,
-        fontSize: 12,
-        color: THEME.mutedInk, // Used THEME.mutedInk so it works in Dark Mode!
-      }}>
-        <a 
+
+      <div
+        style={{
+          textAlign: "center",
+          padding: "20px 0 32px",
+          fontFamily: FONTS.ui,
+          fontSize: 12,
+          color: THEME.mutedInk,
+        }}
+      >
+        <a
           href="/terms"
           style={{
             color: THEME.frame,
@@ -1131,7 +1163,6 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
         {" · "}
         <span>© {new Date().getFullYear()} Bookcover</span>
       </div>
-
     </div>
   );
 }
@@ -1143,73 +1174,102 @@ function AddTile({ onClick, size, darkMode }) {
   return (
     <div
       onClick={onClick}
-      onMouseEnter={() => setIsHovered(true)}  
+      onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       style={{
         display: "flex",
         flexDirection: "column",
         gap: 10,
-        width: config.width, //"160px",
-        //height: "335px",
+        width: config.width,
         cursor: "pointer",
-        transition: "transform 0.3s ease", 
+        transition: "transform 0.3s ease",
         transform: isHovered ? "translateY(-4px)" : "translateY(0)",
-        //alignItems: "center",
-        //justifyContent: "center",
-        //textAlign: "center",
       }}
     >
-      <div style={{
-        width: config.width, //"160px",
-        height: config.height, //"240px",
-        //aspectRatio: "2 / 3",
-        background: darkMode ? "rgba(255,255,255,0.06)" : "rgba(255,255,255,0.28)",
-        border: isHovered 
-          ? darkMode ? `2px solid ${COLORS.status}` : `2px solid ${COLORS.frame}`
-          : darkMode ? "2px dashed rgba(232,232,240,0.25)" : `2px dashed ${COLORS.border}`,
-        borderRadius: 8, 
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        transition: "all 0.3s ease, box-shadow 0.3s ease",
-        boxShadow: isHovered ? `0 20px 40px rgba(26, 75, 93, 0.12)` : "none",
-        //position: "relative",
-      }}> 
-          <div
-            style={{
-              width: size === "small" ? 40 : 58, //58, 
-              height: size === "small" ? 40 : 58, //58, 
-              borderRadius: "50%", //999,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: size === "small" ? 24 : 34, //34,
-              // dynamic colors
-              background: isHovered ? (darkMode ? COLORS.status : COLORS.frame) : darkMode ? "rgba(255,255,255,0.08)" : "rgba(18, 38, 48, 0.05)",
-              border: `2px solid ${isHovered ? (darkMode ? COLORS.status : COLORS.frame) : (darkMode ? "#e8e8f0" : COLORS.ink)}`,
-              color: isHovered ? (darkMode ? COLORS.ink : "#FFFFFF") : (darkMode ? "#e8e8f0" : COLORS.ink), 
-              
-              // THE ANIMATION:
-              transition: "all 0.3s ease",
-            }}
-          >
-            <span style={{ marginTop: "-4px" }}>+</span>
-          </div>
+      <div
+        style={{
+          width: config.width,
+          height: config.height,
+          background: darkMode ? "rgba(255,255,255,0.06)" : "rgba(255,255,255,0.28)",
+          border: isHovered
+            ? darkMode
+              ? `2px solid ${COLORS.status}`
+              : `2px solid ${COLORS.frame}`
+            : darkMode
+            ? "2px dashed rgba(232,232,240,0.25)"
+            : `2px dashed ${COLORS.border}`,
+          borderRadius: 8,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          transition: "all 0.3s ease, box-shadow 0.3s ease",
+          boxShadow: isHovered ? `0 20px 40px rgba(26, 75, 93, 0.12)` : "none",
+        }}
+      >
+        <div
+          style={{
+            width: size === "small" ? 40 : 58,
+            height: size === "small" ? 40 : 58,
+            borderRadius: "50%",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: size === "small" ? 24 : 34,
+            background: isHovered
+              ? darkMode
+                ? COLORS.status
+                : COLORS.frame
+              : darkMode
+              ? "rgba(255,255,255,0.08)"
+              : "rgba(18, 38, 48, 0.05)",
+            border: `2px solid ${
+              isHovered
+                ? darkMode
+                  ? COLORS.status
+                  : COLORS.frame
+                : darkMode
+                ? "#e8e8f0"
+                : COLORS.ink
+            }`,
+            color: isHovered
+              ? darkMode
+                ? COLORS.ink
+                : "#FFFFFF"
+              : darkMode
+              ? "#e8e8f0"
+              : COLORS.ink,
+            transition: "all 0.3s ease",
+          }}
+        >
+          <span style={{ marginTop: "-4px" }}>+</span>
         </div>
+      </div>
 
-        <div style={{ 
-          //height: "85px", 
-          textAlign: "left", 
-        }}>
-        <b style={{ 
-          fontSize: config.fontSize, // 14, 
-          fontFamily: FONTS.ui, 
-          transition: "color 0.3s ease",
-          color: isHovered ? (darkMode ? COLORS.status : COLORS.frame) : (darkMode ? "#e8e8f0" : COLORS.ink) }}>
-            Add new book
+      <div style={{ textAlign: "left" }}>
+        <b
+          style={{
+            fontSize: config.fontSize,
+            fontFamily: FONTS.ui,
+            transition: "color 0.3s ease",
+            color: isHovered
+              ? darkMode
+                ? COLORS.status
+                : COLORS.frame
+              : darkMode
+              ? "#e8e8f0"
+              : COLORS.ink,
+          }}
+        >
+          Add new book
         </b>
         {size !== "small" && (
-          <div style={{ fontSize: 12, color: darkMode ? "rgba(232,232,240,0.55)" : COLORS.mutedInk, fontFamily: FONTS.ui }}>
+          <div
+            style={{
+              fontSize: 12,
+              color: darkMode ? "rgba(232,232,240,0.55)" : COLORS.mutedInk,
+              fontFamily: FONTS.ui,
+            }}
+          >
             Upload or search
           </div>
         )}
@@ -1219,6 +1279,7 @@ function AddTile({ onClick, size, darkMode }) {
 }
 
 function BookTile({
+<<<<<<< HEAD
     book,
     onEdit,
     onDelete,
@@ -1435,27 +1496,128 @@ function BookTile({
         : null;
 
     return (
+=======
+  book,
+  onEdit,
+  onDelete,
+  onGenerateAudiobook,
+  onPrepareLibrivoxAudio,
+  onUpdateVoice,
+  size,
+  darkMode,
+}) {
+  const navigate = useNavigate();
+  const config = GRID_CONFIGS[size] || GRID_CONFIGS["medium"];
+  const inkColor = darkMode ? "#e8e8f0" : COLORS.ink;
+  const mutedColor = darkMode ? "rgba(232,232,240,0.65)" : "#6b7280";
+  const isSmall = size === "small";
+
+  const hasEpub = !!book.epub_link || !!book.epub_storage_path;
+  const hasAudio = !!book.audio_link || !!book.audio_storage_path;
+  const hasGeneratedAudio =
+    Array.isArray(book.generated_audio_tracks) &&
+    book.generated_audio_tracks.length > 0;
+
+  const isGenerating = book.generated_audio_status === "running";
+  const isReady = book.generated_audio_status === "ready" && hasGeneratedAudio;
+  const isError = book.generated_audio_status === "error";
+
+  const generationProgress = book.generated_audio_progress || 0;
+  const generationCurrent = book.generated_audio_current || 0;
+  const generationTotal = book.generated_audio_total || 0;
+
+  const badgeText =
+    hasEpub && (hasAudio || hasGeneratedAudio)
+      ? "EPUB + Audio"
+      : hasEpub
+      ? "EPUB"
+      : hasAudio || hasGeneratedAudio
+      ? "Audio"
+      : "Book";
+
+  const actionButtonStyle = {
+    border: "1px solid rgba(255,255,255,0.18)",
+    background: COLORS.ink,
+    color: "#fff",
+    padding: "7px 10px",
+    borderRadius: 8,
+    fontWeight: 700,
+    cursor: "pointer",
+    fontSize: 11,
+    backdropFilter: "blur(4px)",
+    transition: "all 0.2s ease",
+  };
+
+  const deleteButtonStyle = {
+    ...actionButtonStyle,
+    background: "rgba(127,29,29,0.82)",
+    border: "1px solid rgba(254,202,202,0.35)",
+  };
+
+  const [hoveredBtn, setHoveredBtn] = useState(null);
+
+  const hoverStyle = (id) => ({
+    transform: hoveredBtn === id ? "translateY(-3px)" : "translateY(0)",
+    boxShadow: hoveredBtn === id ? "0 8px 20px rgba(26, 75, 93, 0.4)" : "none",
+  });
+
+  const coverStyle = book.cover_url
+    ? {
+        backgroundImage: `url('${book.cover_url}')`,
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+        backgroundRepeat: "no-repeat",
+      }
+    : {
+        background:
+          "linear-gradient(160deg, rgb(194, 211, 236) 0%, rgb(215, 232, 228) 55%, rgb(184, 204, 230) 100%)",
+      };
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: 10,
+      }}
+    >
+>>>>>>> a24ed1f7df674f991f3f1e741c97154b02acdc2b
       <div
         style={{
-          display: "flex",
-          flexDirection: "column",
-          gap: 10,
+          position: "relative",
+          width: config.width,
+          height: config.height,
+          borderRadius: "2px 8px 8px 2px",
+          overflow: "hidden",
+          boxShadow: "6px 8px 15px rgba(0,0,0,0.3), -1px 0 2px rgba(0,0,0,0.1)",
+          cursor: "pointer",
+          transition: "transform 0.18s ease, box-shadow 0.18s ease",
+          ...coverStyle,
+          backgroundSize: "cover",
+          backgroundPosition: "center",
+        }}
+        onClick={() => navigate(`/reader/${book.id}`)}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.transform = "translateY(-4px)";
+          e.currentTarget.style.boxShadow = "0 16px 30px rgba(0,0,0,0.24)";
+          const overlay = e.currentTarget.querySelector(".book-hover-overlay");
+          if (overlay) overlay.style.opacity = "1";
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.transform = "translateY(0)";
+          e.currentTarget.style.boxShadow = "0 10px 24px rgba(0,0,0,0.18)";
+          const overlay = e.currentTarget.querySelector(".book-hover-overlay");
+          if (overlay) overlay.style.opacity = "0";
         }}
       >
         <div
           style={{
-            position: "relative",
-            width: config.width,
-            height: config.height,
-            borderRadius: "2px 8px 8px 2px",
-            overflow: "hidden",
-            boxShadow: "6px 8px 15px rgba(0,0,0,0.3), -1px 0 2px rgba(0,0,0,0.1)",
-            cursor: "pointer",
-            transition: "transform 0.18s ease, box-shadow 0.18s ease",
-            ...coverStyle,
-            backgroundSize: "cover",
-            backgroundPosition: "center",
+            position: "absolute",
+            inset: 0,
+            pointerEvents: "none",
+            zIndex: 1,
           }}
+<<<<<<< HEAD
           onClick={() => hasEpub && navigate(`/reader/${book.id}`)}
           onMouseEnter={(e) => {
             e.currentTarget.style.transform = "translateY(-8px)";
@@ -1469,8 +1631,43 @@ function BookTile({
             const overlay = e.currentTarget.querySelector(".book-hover-overlay");
             if (overlay) overlay.style.opacity = "0";
             //setActivePanel(null);
+=======
+        />
+
+        <div
+          style={{
+            position: "absolute",
+            top: 10,
+            left: 10,
+            fontSize: 10,
+            fontWeight: 800,
+            letterSpacing: "0.02em",
+            background: "rgba(255,255,255,0.82)",
+            color: COLORS.ink,
+            padding: "5px 8px",
+            borderRadius: 999,
+            border: "1px solid rgba(17,24,39,0.08)",
           }}
         >
+          {badgeText}
+        </div>
+
+        <div
+          className="book-hover-overlay"
+          style={{
+            position: "absolute",
+            inset: 0,
+            opacity: 0,
+            transition: "opacity 0.18s ease",
+            display: "flex",
+            alignItems: "flex-end",
+            justifyContent: "center",
+            padding: 12,
+>>>>>>> a24ed1f7df674f991f3f1e741c97154b02acdc2b
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+<<<<<<< HEAD
           {/* Badge that indicates if there's only EPUB/Audio/EPUB+Audio */}
           <div
             style={{
@@ -1511,9 +1708,18 @@ function BookTile({
               justifyContent: "center", //"flex-start",
               padding: 10,
               zIndex: 3,
+=======
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 10,
+              width: "100%",
+              alignItems: "center",
+>>>>>>> a24ed1f7df674f991f3f1e741c97154b02acdc2b
             }}
-            onClick={(e) => e.stopPropagation()}
           >
+<<<<<<< HEAD
             {/* Left button column — hidden when a panel is open */}
             {true && (
               <div style={{ display: "flex", flexDirection: "column", height: "100%", width: "100%", boxSizing: "border-box" }}>
@@ -1614,12 +1820,64 @@ function BookTile({
 
                   <button
                     style={{ ...deleteButtonStyle, ...hoverStyle("delete"), flex: 1, textAlign: "center" }}
+=======
+            <div
+              style={{
+                display: "flex",
+                gap: 8,
+                flexWrap: "wrap",
+                justifyContent: "center",
+              }}
+            >
+              <button
+                style={{
+                  ...actionButtonStyle,
+                  ...hoverStyle("read"),
+                  opacity: !hasEpub ? 0.35 : 1,
+                  cursor: !hasEpub ? "not-allowed" : "pointer",
+                }}
+                onMouseEnter={() => hasEpub && setHoveredBtn("read")}
+                onMouseLeave={() => setHoveredBtn(null)}
+                onClick={() => hasEpub && navigate(`/reader/${book.id}`)}
+              >
+                Reader
+              </button>
+
+              <button
+                style={{
+                  ...actionButtonStyle,
+                  ...hoverStyle("listen"),
+                  opacity: !(hasAudio || hasGeneratedAudio) ? 0.35 : 1,
+                  cursor: !(hasAudio || hasGeneratedAudio) ? "not-allowed" : "pointer",
+                }}
+                onMouseEnter={() => (hasAudio || hasGeneratedAudio) && setHoveredBtn("listen")}
+                onMouseLeave={() => setHoveredBtn(null)}
+                onClick={() => (hasAudio || hasGeneratedAudio) && navigate(`/player/${book.id}`)}
+              >
+                Player
+              </button>
+
+              <button
+                style={{ ...actionButtonStyle, ...hoverStyle("edit") }}
+                onMouseEnter={() => setHoveredBtn("edit")}
+                onMouseLeave={() => setHoveredBtn(null)}
+                onClick={() => onEdit(book)}
+              >
+                Edit
+              </button>
+
+              {!isSmall && (
+                <>
+                  <button
+                    style={{ ...deleteButtonStyle, ...hoverStyle("delete") }}
+>>>>>>> a24ed1f7df674f991f3f1e741c97154b02acdc2b
                     onMouseEnter={() => setHoveredBtn("delete")}
                     onMouseLeave={() => setHoveredBtn(null)}
                     onClick={() => onDelete(book)}
                   >
                     Delete
                   </button>
+<<<<<<< HEAD
                 </div>
 
               </div>
@@ -1697,6 +1955,161 @@ function BookTile({
           
 
    
+=======
+
+                  <button
+                    style={{
+                      ...actionButtonStyle,
+                      ...hoverStyle("generate"),
+                      opacity: isGenerating ? 0.65 : 1,
+                      cursor: isGenerating ? "not-allowed" : "pointer",
+                    }}
+                    onMouseEnter={() => !isGenerating && setHoveredBtn("generate")}
+                    onMouseLeave={() => setHoveredBtn(null)}
+                    onClick={() => !isGenerating && onGenerateAudiobook(book.id)}
+                  >
+                    {isGenerating
+                      ? "Generating..."
+                      : isReady
+                      ? "Regenerate Audio"
+                      : "Generate Audiobook"}
+                  </button>
+
+                  <button
+                    style={{ ...actionButtonStyle, ...hoverStyle("librivox") }}
+                    onMouseEnter={() => setHoveredBtn("librivox")}
+                    onMouseLeave={() => setHoveredBtn(null)}
+                    onClick={() => onPrepareLibrivoxAudio(book.id)}
+                  >
+                    Prepare LibriVox Audio
+                  </button>
+                </>
+              )}
+            </div>
+
+            {!isSmall && (
+              <div style={{ width: "100%" }}>
+                <label
+                  style={{
+                    display: "block",
+                    marginBottom: 6,
+                    fontSize: 12,
+                    fontWeight: 700,
+                    color: "#f9fafb",
+                  }}
+                >
+                  Narrator Voice
+                </label>
+
+                <select
+                  value={book.generated_audio_voice || "en-US-GuyNeural"}
+                  onChange={(e) => onUpdateVoice(book.id, e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "8px 10px",
+                    borderRadius: 10,
+                    border: "1px solid rgba(255,255,255,0.18)",
+                    fontSize: 12,
+                    background: darkMode ? "#16213e" : "#ffffff",
+                    color: darkMode ? "#e8e8f0" : "#122630",
+                  }}
+                >
+                  {AUDIO_VOICES.map((voice) => (
+                    <option key={voice.value} value={voice.value}>
+                      {voice.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div
+        style={{
+          width: config.width,
+          marginTop: "10px",
+          display: "flex",
+          flexDirection: "column",
+          justifyContent: "flex-start",
+        }}
+      >
+        <div
+          style={{
+            fontSize: config.fontSize,
+            fontWeight: 800,
+            lineHeight: 1.2,
+            color: inkColor,
+            fontFamily: FONTS.headings,
+            marginBottom: 4,
+            display: "-webkit-box",
+            WebkitLineClamp: config.lineClamp,
+            WebkitBoxOrient: "vertical",
+            overflow: "hidden",
+          }}
+        >
+          {book.title || "(Untitled)"}
+        </div>
+
+        <div
+          style={{
+            fontSize: config.fontSize - 2,
+            color: mutedColor,
+            lineHeight: 1.3,
+          }}
+        >
+          {book.author || "Unknown"}
+        </div>
+
+        {book.generated_audio_voice && (
+          <div style={{ marginTop: 6, fontSize: 11, color: mutedColor }}>
+            Voice: {getVoiceLabel(book.generated_audio_voice)}
+          </div>
+        )}
+
+        {isGenerating && (
+          <div style={{ marginTop: 8 }}>
+            <div style={{ fontSize: 11, color: mutedColor, marginBottom: 4 }}>
+              Generating audiobook… {generationCurrent}/{generationTotal}
+            </div>
+            <div
+              style={{
+                width: "100%",
+                height: 8,
+                background: darkMode ? "rgba(255,255,255,0.12)" : "#e5e7eb",
+                borderRadius: 999,
+                overflow: "hidden",
+              }}
+            >
+              <div
+                style={{
+                  width: `${generationProgress}%`,
+                  height: "100%",
+                  background: COLORS.frame,
+                  transition: "width 0.3s ease",
+                }}
+              />
+            </div>
+          </div>
+        )}
+
+        {isReady && (
+          <div style={{ marginTop: 8, fontSize: 11, color: "#16a34a", fontWeight: 700 }}>
+            Audiobook ready — open Reader to listen
+          </div>
+        )}
+
+        {isError && (
+          <div style={{ marginTop: 8, fontSize: 11, color: "#b91c1c" }}>
+            Audio generation failed
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+>>>>>>> a24ed1f7df674f991f3f1e741c97154b02acdc2b
 
 function SearchResultCard({ book, onAddEpub, onFindAudio, onAddAudio, onAddBoth }) {
   const [rowStatus, setRowStatus] = useState("");
@@ -1817,11 +2230,8 @@ function TabButton({ active, onClick, children }) {
       onClick={onClick}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
-
       style={{
-        border: `1px solid ${
-          active ? "rgba(242, 201, 76, 0.55)" : COLORS.border
-        }`,
+        border: `1px solid ${active ? "rgba(242, 201, 76, 0.55)" : COLORS.border}`,
         background: active ? "rgba(242, 201, 76, 0.18)" : "rgba(255,255,255,0.55)",
         color: active ? COLORS.frame : COLORS.ink,
         padding: "10px 14px",
@@ -1830,12 +2240,13 @@ function TabButton({ active, onClick, children }) {
         fontWeight: 700,
         fontSize: 13,
         fontFamily: FONTS.ui,
-        
         transition: "all 0.2s ease",
         transform: isHovered ? "translateY(-3px)" : "translateY(0)",
-        boxShadow: isHovered 
-          ? `0 6px 15px rgba(242, 201, 76, 0.4)` // Yellow (Status) Shadow
-          : active ? "0 0 0 1px rgba(242, 201, 76, 0.18)" : "none",
+        boxShadow: isHovered
+          ? `0 6px 15px rgba(242, 201, 76, 0.4)`
+          : active
+          ? "0 0 0 1px rgba(242, 201, 76, 0.18)"
+          : "none",
       }}
     >
       {children}
@@ -1864,20 +2275,6 @@ function Field({ label, children }) {
     </div>
   );
 }
-
-const gridStyle = {
-  /*display: "grid",
-  gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))",
-  gap: 24,
-  alignItems: "start",*/
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))",
-  gap: "40px 24px", // Increased vertical gap to make room for the shelf
-  alignItems: "end", // Aligns books to sit "on" the shelf
-  paddingBottom: "10px",
-  // This adds a dark wooden line under every row of books
-  borderBottom: "8px solid #3d2b1f",
-};
 
 const inputStyle = {
   padding: "13px 14px",

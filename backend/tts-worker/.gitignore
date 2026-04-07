@@ -9,3 +9,4 @@ pyvenv.cfg
 # Lib and bin directories
 bin/
 lib/
+backend/tts-worker/serviceAccountKey.json

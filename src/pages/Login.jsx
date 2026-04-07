@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { auth, db } from "../firebase";
-import BookcoverLogo from "../BookcoverLogo";
+import bookcoverLogo from "../assets/bookcover-logo.png";
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
@@ -122,10 +122,14 @@ export default function Login() {
           ? "0 8px 20px rgba(26, 75, 93, 0.24)"
           : "0 6px 16px rgba(26, 75, 93, 0.18)"
         : isHovered
-        ? "inset 0 0 0 1px rgba(26, 75, 93, 0.08), 0 4px 10px rgba(18, 38, 48, 0.05)"
+        ? "0 4px 10px rgba(18, 38, 48, 0.08)"
         : "none",
-      background:
-        !isActive && isHovered ? "rgba(255,255,255,0.55)" : undefined,
+      background: isActive
+        ? COLORS.frame
+        : isHovered
+        ? "rgba(26, 75, 93, 0.92)"
+        : "rgba(26, 75, 93, 0.82)",
+      color: COLORS.white,
     };
   };
 
@@ -158,7 +162,11 @@ export default function Login() {
         onMouseLeave={() => setCardHovered(false)}
       >
         <div style={logoWrapStyle}>
-          <BookcoverLogo size={150} />
+          <img
+            src={bookcoverLogo}
+            alt="Bookcover logo"
+            style={logoImageStyle}
+          />
         </div>
 
         <div style={headerBlockStyle}>
@@ -320,7 +328,7 @@ const tabRowStyle = {
   display: "grid",
   gridTemplateColumns: "1fr 1fr",
   gap: "10px",
-  background: "rgba(230, 126, 126, 0.12)",
+  background: "rgba(26, 75, 93, 0.10)",
   borderRadius: "16px",
   padding: "6px",
   marginBottom: "18px",
@@ -343,8 +351,8 @@ const activeTabStyle = {
 };
 
 const inactiveTabStyle = {
-  background: "transparent",
-  color: COLORS.ink,
+  background: "rgba(26, 75, 93, 0.82)",
+  color: COLORS.white,
 };
 
 const formStyle = {
@@ -393,4 +401,9 @@ const statusStyle = {
   lineHeight: 1.45,
   border: `1px solid rgba(142, 36, 36, 0.12)`,
   fontFamily: '"Libre Baskerville", Georgia, serif',
+};
+const logoImageStyle = {
+  width: "180px",
+  height: "auto",
+  display: "block",
 };
