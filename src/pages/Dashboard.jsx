@@ -1,12 +1,21 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { auth, db, storage } from "../firebase";
 import { signOut } from "firebase/auth";
-import { collection, doc, onSnapshot, setDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
+import {
+  collection,
+  doc,
+  onSnapshot,
+  setDoc,
+  deleteDoc,
+  serverTimestamp,
+} from "firebase/firestore";
 import { ref, uploadBytes } from "firebase/storage";
 import Modal from "../components/Modal";
 import { useNavigate } from "react-router-dom";
 
 const SCRAPER_BASE_URL = "http://localhost:5050";
+const AUDIO_SERVICE_BASE_URL = "http://127.0.0.1:5002";
+
 const COLORS = {
   canvas: "#F9EAEA",
   ink: "#122630",
@@ -39,6 +48,17 @@ const GRID_CONFIGS = {
   medium: { width: 160, height: 240, gap: 24, fontSize: 14, lineClamp: 3 },
   large: { width: 210, height: 315, gap: 32, fontSize: 18, lineClamp: 3 },
 };
+
+const DEFAULT_GENERATED_AUDIO_FIELDS = {
+  generated_audio_status: "idle",
+  generated_audio_progress: 0,
+  generated_audio_current: 0,
+  generated_audio_total: 0,
+  generated_audio_tracks: [],
+  generated_audio_error: null,
+};
+
+const GRID_SIZES = ["small", "medium", "large"];
 
 const generateBookId = (title) =>
   title.toLowerCase().trim().replace(/[^a-z0-9]/g, "-");
@@ -107,7 +127,6 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
   const [editEpubFile, setEditEpubFile] = useState(null);
   const [editAudioFile, setEditAudioFile] = useState(null);
   const [editStatus, setEditStatus] = useState("");
-  const [hoveredSize, setHoveredSize] = useState(null);
 
   const booksCol = useMemo(() => collection(db, "Users", user.uid, "Books"), [user.uid]);
   const sortedBooks = useMemo(() => {
@@ -199,9 +218,7 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
       if (editEpubFile) {
         setEditStatus("Uploading new EPUB...");
         const epubPath = `epubs/${user.uid}/${editBook.id}.epub`;
-        const epubRef = ref(storage, epubPath);
-        await uploadBytes(epubRef, editEpubFile);
-
+        await uploadBytes(ref(storage, epubPath), editEpubFile);
         updates.epub_storage_path = epubPath;
         updates.epub_source = "upload";
       }
@@ -209,16 +226,13 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
       if (editAudioFile) {
         setEditStatus("Uploading new audio...");
         const audioPath = `audio/${user.uid}/${editBook.id}/${editAudioFile.name}`;
-        const audioRef = ref(storage, audioPath);
-        await uploadBytes(audioRef, editAudioFile);
-
+        await uploadBytes(ref(storage, audioPath), editAudioFile);
         updates.audio_storage_path = audioPath;
         updates.audio_source = "upload";
       }
 
       setEditStatus("Saving changes...");
-      await setDoc(doc(db, "Users", user.uid, "Books", editBook.id), updates, { merge: true });
-
+      await setDoc(getBookDocRef(user.uid, editBook.id), updates, { merge: true });
       closeEditModal();
     } catch (e) {
       setEditStatus("Edit failed: " + e.message);
@@ -229,11 +243,10 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
     const confirmed = window.confirm(
       `Delete "${book.title || "this book"}" from your bookshelf?\n\nThis cannot be undone.`
     );
-
     if (!confirmed) return;
 
     try {
-      await deleteDoc(doc(db, "Users", user.uid, "Books", book.id));
+      await deleteDoc(getBookDocRef(user.uid, book.id));
     } catch (e) {
       alert("Delete failed: " + e.message);
     }
@@ -242,10 +255,12 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
   // upload manually
   const uploadManualFiles = async () => {
     setUpStatus("");
+
     if (!upTitle.trim()) {
       setUpStatus("Please provide a title.");
       return;
     }
+
     if (!upFile && !upAudioFile) {
       setUpStatus("Upload an EPUB and/or an audio file.");
       return;
@@ -253,31 +268,27 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
 
     try {
       const bookId = generateBookId(upTitle);
+      const bookRef = getBookDocRef(user.uid, bookId);
+
       const baseDoc = {
         title: upTitle.trim(),
         author: upAuthor.trim() || "Unknown",
-        generated_audio_status: "idle",
-        generated_audio_progress: 0,
-        generated_audio_current: 0,
-        generated_audio_total: 0,
-        generated_audio_tracks: [],
-        generated_audio_error: null,
+        ...DEFAULT_GENERATED_AUDIO_FIELDS,
         generated_audio_voice: selectedVoice,
         updatedAt: serverTimestamp(),
         createdAt: serverTimestamp(),
       };
 
       setUpStatus("Saving book…");
-      await setDoc(doc(db, "Users", user.uid, "Books", bookId), baseDoc, { merge: true });
+      await setDoc(bookRef, baseDoc, { merge: true });
 
       if (upFile) {
         setUpStatus("Uploading EPUB…");
         const epubPath = `epubs/${user.uid}/${bookId}.epub`;
-        const epubRef = ref(storage, epubPath);
-        await uploadBytes(epubRef, upFile);
+        await uploadBytes(ref(storage, epubPath), upFile);
 
         await setDoc(
-          doc(db, "Users", user.uid, "Books", bookId),
+          bookRef,
           {
             epub_storage_path: epubPath,
             epub_source: "upload",
@@ -294,11 +305,10 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
       if (upAudioFile) {
         setUpStatus("Uploading audio…");
         const audioPath = `audio/${user.uid}/${bookId}/${upAudioFile.name}`;
-        const audioRef = ref(storage, audioPath);
-        await uploadBytes(audioRef, upAudioFile);
+        await uploadBytes(ref(storage, audioPath), upAudioFile);
 
         await setDoc(
-          doc(db, "Users", user.uid, "Books", bookId),
+          bookRef,
           {
             audio_storage_path: audioPath,
             audio_source: "upload",
@@ -311,10 +321,7 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
 
       setUpStatus("Saved ✓");
       setModalOpen(false);
-      setUpTitle("");
-      setUpAuthor("");
-      setUpFile(null);
-      setUpAudioFile(null);
+      resetUploadForm();
     } catch (e) {
       setUpStatus("Upload failed: " + e.message);
     }
@@ -323,6 +330,7 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
   const searchGutenberg = async () => {
     setSearchStatus("");
     setResults([]);
+
     if (!q.trim()) {
       setSearchStatus("Enter a search term.");
       return;
@@ -330,7 +338,9 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
 
     try {
       setSearchStatus("Searching Gutenberg…");
-      const res = await fetch(`https://gutendex.com/books/?search=${encodeURIComponent(q.trim())}`);
+      const res = await fetch(
+        `https://gutendex.com/books/?search=${encodeURIComponent(q.trim())}`
+      );
       const data = await res.json();
       const raw = data?.results || [];
 
@@ -356,7 +366,7 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
   };
   const prepareLibrivoxAudio = async (bookId) => {
     try {
-      const res = await fetch("http://127.0.0.1:5002/prepare-librivox-audio", {
+      const res = await fetch(`${AUDIO_SERVICE_BASE_URL}/prepare-librivox-audio`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
@@ -380,7 +390,7 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
   };
   const generateAudiobook = async (bookId) => {
     try {
-      const res = await fetch("http://127.0.0.1:5002/generate-audio", {
+      const res = await fetch(`${AUDIO_SERVICE_BASE_URL}/generate-audio`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
@@ -409,7 +419,7 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
   const updateBookVoice = async (bookId, voice) => {
     try {
       await setDoc(
-        doc(db, "Users", user.uid, "Books", bookId),
+        getBookDocRef(user.uid, bookId),
         {
           generated_audio_voice: voice,
           updatedAt: serverTimestamp(),
@@ -423,6 +433,7 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
   };
   const addEpub = async (book) => {
     const id = generateBookId(book.title);
+
     await setDoc(
         doc(db, "Users", user.uid, "Books", id),
         {
@@ -446,14 +457,17 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
   };
 
   const findAudio = async (title) => {
-    const res = await fetch(`${SCRAPER_BASE_URL}/scrape-audio?title=${encodeURIComponent(title)}`);
+    const res = await fetch(
+      `${SCRAPER_BASE_URL}/scrape-audio?title=${encodeURIComponent(title)}`
+    );
     return await res.json();
   };
 
   const addAudio = async (book, audioUrl) => {
     const id = generateBookId(book.title);
+
     await setDoc(
-      doc(db, "Users", user.uid, "Books", id),
+      getBookDocRef(user.uid, id),
       {
         title: book.title,
         author: book.author,
@@ -473,6 +487,7 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
 
       setRowStatus("Searching audio…");
       const audio = await findAudio(book.title);
+
       if (audio.status === "success" && audio.audio_url) {
         await addAudio(book, audio.audio_url);
         setRowStatus("Done ✓ (EPUB + Audio)");
@@ -483,6 +498,8 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
       setRowStatus("Failed: " + e.message);
     }
   };
+
+  const gridConfig = GRID_CONFIGS[gridSize];
 
   return (
     <div
@@ -526,7 +543,7 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
           >
             <span
               style={{
-                fontSize: 12,
+                margin: "4px 0 0",
                 color: THEME.mutedInk,
                 maxWidth: 280,
                 overflow: "hidden",
@@ -596,20 +613,19 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
                 
                 cursor: "pointer",
                 fontFamily: FONTS.ui,
-                fontWeight: 600,
-                fontSize: 13,
-                transition: "all 0.3s ease",
-                transform: isDarkToggleHovered ? "translateY(-3px)" : "translateY(0)",
-                boxShadow: isDarkToggleHovered
-                  ? darkMode
-                    ? "0 8px 20px rgba(242, 201, 76, 0.5)"
-                    : "0 8px 20px rgba(26, 75, 93, 0.4)"
-                  : "0 2px 8px rgba(18, 38, 48, 0.08)",
               }}
             >
-              {darkMode ? "☀ Light" : "☾ Dark"}
-            </button>
+              Your personal bookshelf
+            </p>
           </div>
+
+          <HeaderActions
+            user={user}
+            darkMode={darkMode}
+            setDarkMode={setDarkMode}
+            onLogout={logout}
+            theme={THEME}
+          />
         </div>
         
         <div style={{ margin: "18px 0 12px", display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}> 
@@ -916,7 +932,6 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
                 ...btnWide, 
                 background: COLORS.frame,
                 color: COLORS.white,
-                cursor: "pointer",
                 border: "none",
                 transition: "all 0.3s ease",
                 transform: isSaveHovered ? "translateY(-3px)" : "translateY(0)",
@@ -927,7 +942,7 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
               }}
             >
               Save Changes
-            </button>
+            </HoverButton>
 
             {editStatus && (
               <p
@@ -1133,6 +1148,270 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
       </div>
 
     </div>
+  );
+}
+
+function HeaderActions({ user, darkMode, setDarkMode, onLogout, theme }) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        background: theme.white,
+        border: `1px solid ${COLORS.border}`,
+        borderRadius: 14,
+        padding: "10px 12px",
+        boxShadow: "0 4px 14px rgba(18,38,48,0.08)",
+        fontFamily: FONTS.ui,
+      }}
+    >
+      <span
+        style={{
+          fontSize: 12,
+          color: theme.mutedInk,
+          maxWidth: 280,
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+          fontFamily: FONTS.ui,
+        }}
+      >
+        {user.email}
+      </span>
+
+      <HoverButton
+        onClick={onLogout}
+        baseStyle={{
+          background: COLORS.frame,
+          color: COLORS.white,
+          fontFamily: FONTS.ui,
+          fontSize: 13,
+          fontWeight: 600,
+          lineHeight: 2,
+          border: "none",
+          borderRadius: 12,
+          width: 42,
+          height: 42,
+          padding: 0,
+          cursor: "pointer",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+          <polyline points="16 17 21 12 16 7" />
+          <line x1="21" y1="12" x2="9" y2="12" />
+        </svg>
+      </HoverButton>
+
+      <HoverButton
+        onClick={() => setDarkMode((d) => !d)}
+        baseStyle={{
+          background: darkMode ? COLORS.status : COLORS.ink,
+          color: darkMode ? COLORS.ink : COLORS.white,
+          border: "none",
+          borderRadius: 12,
+          height: 42,
+          padding: "0 14px",
+          display: "flex",
+          alignItems: "center",
+          gap: "6px",
+          cursor: "pointer",
+          fontFamily: FONTS.ui,
+          fontWeight: 600,
+          fontSize: 13,
+        }}
+        hoverShadow={
+          darkMode
+            ? "0 8px 20px rgba(242, 201, 76, 0.5)"
+            : "0 8px 20px rgba(26, 75, 93, 0.4)"
+        }
+      >
+        {darkMode ? "☀ Light" : "☾ Dark"}
+      </HoverButton>
+    </div>
+  );
+}
+
+function UploadTab({
+  upTitle,
+  setUpTitle,
+  upAuthor,
+  setUpAuthor,
+  setUpAudioFile,
+  setUpFile,
+  uploadManualFiles,
+  upStatus,
+}) {
+  return (
+    <div>
+      <Row>
+        <Field label="Book title">
+          <input
+            style={inputStyle}
+            value={upTitle}
+            onChange={(e) => setUpTitle(e.target.value)}
+            placeholder="e.g., Pride and Prejudice"
+          />
+        </Field>
+
+        <Field label="Author">
+          <input
+            style={inputStyle}
+            value={upAuthor}
+            onChange={(e) => setUpAuthor(e.target.value)}
+            placeholder="e.g., Jane Austen"
+          />
+        </Field>
+
+        <Field label="Audio file (mp3/zip/m4b)">
+          <input
+            style={inputStyle}
+            type="file"
+            accept=".mp3,.zip,.m4b,.m4a,.ogg,.wav"
+            onChange={(e) => setUpAudioFile(e.target.files?.[0] || null)}
+          />
+        </Field>
+      </Row>
+
+      <Field label="EPUB file">
+        <input
+          style={inputStyle}
+          type="file"
+          accept=".epub"
+          onChange={(e) => setUpFile(e.target.files?.[0] || null)}
+        />
+      </Field>
+
+      <HoverButton
+        onClick={uploadManualFiles}
+        baseStyle={{
+          ...btnWide,
+          background: COLORS.frame,
+          cursor: "pointer",
+          border: "none",
+          color: "#FFFFFF",
+        }}
+        hoverShadow="0 10px 25px rgba(26, 75, 93, 0.35)"
+      >
+        Upload EPUB / Audiobook
+      </HoverButton>
+
+      {upStatus && (
+        <p
+          style={{
+            marginTop: 12,
+            color: upStatus.startsWith("Upload failed") ? COLORS.accent : COLORS.mutedInk,
+            fontSize: 13,
+            fontFamily: FONTS.ui,
+          }}
+        >
+          {upStatus}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function SearchTab({
+  q,
+  setQ,
+  searchStatus,
+  searchGutenberg,
+  results,
+  addEpub,
+  findAudio,
+  addAudio,
+  addBoth,
+}) {
+  return (
+    <div>
+      <Field label="Search Gutenberg (covers included)">
+        <input
+          style={inputStyle}
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Search by title, author…"
+        />
+      </Field>
+
+      <HoverButton
+        onClick={searchGutenberg}
+        baseStyle={{
+          ...btnWide,
+          background: COLORS.frame,
+          cursor: "pointer",
+          border: "none",
+          color: "#FFFFFF",
+        }}
+        hoverShadow="0 10px 25px rgba(26, 75, 93, 0.35)"
+      >
+        Search
+      </HoverButton>
+
+      {searchStatus && (
+        <p
+          style={{
+            marginTop: 12,
+            color: searchStatus.includes("failed") ? COLORS.accent : COLORS.mutedInk,
+            fontSize: 13,
+            fontFamily: FONTS.ui,
+          }}
+        >
+          {searchStatus}
+        </p>
+      )}
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(1, minmax(0, 1fr))",
+          gap: 12,
+          marginTop: 12,
+        }}
+      >
+        {results.map((r) => (
+          <SearchResultCard
+            key={r.gutenberg_id}
+            book={r}
+            onAddEpub={() => addEpub(r)}
+            onFindAudio={() => findAudio(r.title)}
+            onAddAudio={(audioUrl) => addAudio(r, audioUrl)}
+            onAddBoth={(setRowStatus) => addBoth(r, setRowStatus)}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function HoverButton({ onClick, children, baseStyle, hoverShadow }) {
+  const [isHovered, setIsHovered] = useState(false);
+
+  return (
+    <button
+      onClick={onClick}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      style={{
+        ...baseStyle,
+        ...getHoverLiftStyle(isHovered, hoverShadow),
+      }}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -1717,7 +1996,7 @@ function SearchResultCard({ book, onAddEpub, onFindAudio, onAddAudio, onAddBoth 
       } else {
         setRowStatus("No audio found.");
       }
-    } catch (e) {
+    } catch {
       setRowStatus("Audio search failed.");
     }
   };
@@ -1760,6 +2039,7 @@ function SearchResultCard({ book, onAddEpub, onFindAudio, onAddAudio, onAddBoth 
           border: "1px solid rgba(17,24,39,0.08)",
         }}
       />
+
       <div style={{ flex: 1, minWidth: 0 }}>
         <h4 style={{ margin: "0 0 6px", fontSize: 14, lineHeight: 1.2 }}>{book.title}</h4>
         <p style={{ margin: "0 0 10px", fontSize: 12, color: "#6b7280" }}>By {book.author}</p>
@@ -1803,7 +2083,9 @@ function SearchResultCard({ book, onAddEpub, onFindAudio, onAddAudio, onAddBoth 
           )}
         </div>
 
-        {rowStatus && <div style={{ marginTop: 8, fontSize: 12, color: "#6b7280" }}>{rowStatus}</div>}
+        {rowStatus && (
+          <div style={{ marginTop: 8, fontSize: 12, color: "#6b7280" }}>{rowStatus}</div>
+        )}
       </div>
     </div>
   );
@@ -1844,12 +2126,25 @@ function TabButton({ active, onClick, children }) {
 }
 
 function Row({ children }) {
-  return <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>{children}</div>;
+  return (
+    <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+      {children}
+    </div>
+  );
 }
 
 function Field({ label, children }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 8, margin: "10px 0", flex: 1, minWidth: 220 }}>
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: 8,
+        margin: "10px 0",
+        flex: 1,
+        minWidth: 220,
+      }}
+    >
       <label
         style={{
           fontSize: 14,
@@ -1894,16 +2189,13 @@ const inputStyle = {
 
 const btnWide = {
   width: "100%",
-  border: "none",
   borderRadius: 16,
   padding: "14px 16px",
-  color: "#fff",
   fontWeight: 800,
   cursor: "pointer",
   marginTop: 10,
   fontFamily: FONTS.ui,
   fontSize: 15,
-  boxShadow: "0 10px 24px rgba(18,38,48,0.10)",
 };
 
 const miniPreview = {
