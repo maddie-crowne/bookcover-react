@@ -47,6 +47,8 @@ export default function Player({ darkMode, setDarkMode }) {
   const [hoverSkipFwd, setHoverSkipFwd] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1);
   const [audioBookmarks, setAudioBookmarks] = useState([]);
+  const [hoverSpeed, setHoverSpeed] = useState(null);
+  
   const [hoverAudioBookmark, setHoverAudioBookmark] = useState(false);
 
   const THEME = darkMode
@@ -721,47 +723,80 @@ export default function Player({ darkMode, setDarkMode }) {
           </div>
 
           {/* Playback speed */}
-          <div style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 8,
-            marginTop: 20,
-            width: "100%",
-          }}>
-            <span style={{ fontSize: 12, color: THEME.mutedInk, fontFamily: FONTS.ui, marginRight: 4 }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 8,
+              marginTop: 20,
+              width: "100%",
+            }}
+          >
+            <span
+              style={{
+                fontSize: 12,
+                color: THEME.mutedInk,
+                fontFamily: FONTS.ui,
+                marginRight: 4,
+              }}
+            >
               Speed
             </span>
-            {[0.75, 1, 1.25, 1.5, 1.75, 2].map((rate) => (
-              <button
-                key={rate}
-                onClick={() => setPlaybackRate(rate)}
-                style={{
-                  padding: "5px 10px",
-                  borderRadius: 8,
-                  border: "none",
-                  cursor: "pointer",
-                  fontFamily: FONTS.ui,
-                  fontSize: 12,
-                  fontWeight: playbackRate === rate ? 700 : 400,
-                  transition: "all 0.2s ease",
-                  background: playbackRate === rate
-                    ? darkMode ? COLORS.status : COLORS.frame
-                    : THEME.scrubberBg,
-                  color: playbackRate === rate
-                    ? darkMode ? COLORS.ink : COLORS.white
-                    : THEME.mutedInk,
-                  transform: playbackRate === rate ? "translateY(-2px)" : "translateY(0)",
-                  boxShadow: playbackRate === rate
-                    ? darkMode ? "0 4px 12px rgba(242,201,76,0.3)" : "0 4px 12px rgba(26,75,93,0.25)"
-                    : "none",
-                }}
-              >
-                {rate}×
-              </button>
-            ))}
-          </div>
 
+            {[0.75, 1, 1.25, 1.5, 1.75, 2].map((rate) => {
+              const isActive = playbackRate === rate;
+              const isHovered = hoverSpeed === rate;
+
+              return (
+                <button
+                  key={rate}
+                  onClick={() => setPlaybackRate(rate)}
+                  onMouseEnter={() => setHoverSpeed(rate)}
+                  onMouseLeave={() => setHoverSpeed(null)}
+                  style={{
+                    padding: "5px 10px",
+                    borderRadius: 8,
+                    border: "none",
+                    cursor: "pointer",
+                    fontFamily: FONTS.ui,
+                    fontSize: 12,
+                    fontWeight: isActive ? 700 : 400,
+                    transition: "all 0.2s ease",
+                    background: isActive
+                      ? darkMode
+                        ? COLORS.status
+                        : COLORS.frame
+                      : isHovered
+                      ? darkMode
+                        ? "rgba(242,201,76,0.18)"
+                        : "rgba(26,75,93,0.12)"
+                      : THEME.scrubberBg,
+                    color: isActive
+                      ? darkMode
+                        ? COLORS.ink
+                        : COLORS.white
+                      : isHovered
+                      ? THEME.ink
+                      : THEME.mutedInk,
+                    transform:
+                      isActive || isHovered ? "translateY(-2px)" : "translateY(0)",
+                    boxShadow: isActive
+                      ? darkMode
+                        ? "0 4px 12px rgba(242,201,76,0.3)"
+                        : "0 4px 12px rgba(26,75,93,0.25)"
+                      : isHovered
+                      ? darkMode
+                        ? "0 4px 10px rgba(242,201,76,0.15)"
+                        : "0 4px 10px rgba(26,75,93,0.12)"
+                      : "none",
+                  }}
+                >
+                  {rate}×
+                </button>
+              );
+            })}
+          </div>
             {/* Audio Bookmarks */}
             {audioBookmarks.length > 0 && (
             <div style={{
