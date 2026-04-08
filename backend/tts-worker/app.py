@@ -7,6 +7,7 @@ import json
 import zipfile
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+import sys
 
 import firebase_admin
 from firebase_admin import credentials, firestore, storage
@@ -108,7 +109,7 @@ def generate_audio():
                 raise Exception(f"Missing script: {tts_script}")
 
             extract_result = subprocess.run(
-                ["python3", extract_script, epub_path, chapters_dir],
+                [sys.executable, extract_script, epub_path, chapters_dir],
                 capture_output=True,
                 text=True
             )
@@ -157,7 +158,7 @@ def generate_audio():
 
                 try:
                     tts_result = subprocess.run(
-                        ["python3", tts_script, txt_path, mp3_path, voice],
+                        [sys.executable, tts_script, txt_path, mp3_path, voice],
                         capture_output=True,
                         text=True,
                         timeout=300

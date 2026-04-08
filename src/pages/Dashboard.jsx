@@ -90,6 +90,7 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
   const [isDarkToggleHovered, setIsDarkToggleHovered] = useState(false);
   const [isSaveHovered, setIsSaveHovered] = useState(false);
   const [selectedVoice, setSelectedVoice] = useState("en-US-GuyNeural");
+  const [hoveredSize, setHoveredSize] = useState(null);
 
   
   const THEME = darkMode ? {
@@ -416,20 +417,16 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
       alert("Could not reach audio generator: " + e.message);
     }
   };
+  
   const updateBookVoice = async (bookId, voice) => {
-    try {
-      await setDoc(
-        getBookDocRef(user.uid, bookId),
-        {
-          generated_audio_voice: voice,
-          updatedAt: serverTimestamp(),
-        },
-        { merge: true }
-      );
-    } catch (e) {
-      console.error("Failed to update voice:", e);
-      alert("Failed to update voice: " + e.message);
-    }
+    await setDoc(
+      doc(db, "Users", user.uid, "Books", bookId),
+      {
+        generated_audio_voice: voice,
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
   };
   const addEpub = async (book) => {
     const id = generateBookId(book.title);
@@ -526,97 +523,9 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
             </h1>
             <p style={{ margin: "4px 0 0", color: THEME.mutedInk, fontSize: 13, fontFamily: FONTS.ui }}>
               Your personal bookshelf
-            </p>
-          </div>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-              background: THEME.white,
-              border: `1px solid ${COLORS.border}`,
-              borderRadius: 14,
-              padding: "10px 12px",
-              boxShadow: "0 4px 14px rgba(18,38,48,0.08)",
-              fontFamily: FONTS.ui,
-            }}
-          >
-            <span
-              style={{
-                margin: "4px 0 0",
-                color: THEME.mutedInk,
-                maxWidth: 280,
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-                fontFamily: FONTS.ui,
-              }}
-            >
-              {user.email}
-            </span>
-            <button
-              onClick={logout}
-              onMouseEnter={() => setIsLogoutHovered(true)}
-              onMouseLeave={() => setIsLogoutHovered(false)}
-              style={{
-                background: COLORS.frame, // Midnight Navy default
-                color: COLORS.white,
-                fontFamily: FONTS.ui,
-                fontSize: 13,
-                fontWeight: 600,
-                lineHeight: 2,
-                // Shape & Spacing
-                border: "none",
-                borderRadius: 12,
-                width: 42,
-                height: 42,
-                padding: 0,//"10px 12px",
-                
-                cursor: "pointer",
+            </p>          
 
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                
-                // Interaction & Animation
-                transition: "all 0.3s ease",
-                transform: isLogoutHovered ? "translateY(-3px)" : "translateY(0)",
-                
-                // Blue Shadow Highlight
-                boxShadow: isLogoutHovered 
-                  ? "0 8px 20px rgba(26, 75, 93, 0.4)" // Navy highlight
-                  : "0 2px 8px rgba(18, 38, 48, 0.08)",
-                
-              }}
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
-                <polyline points="16 17 21 12 16 7"/>
-                <line x1="21" y1="12" x2="9" y2="12"/>
-              </svg>
-            </button>
-
-            <button
-              onClick={() => setDarkMode(d => !d)}
-              onMouseEnter={() => setIsDarkToggleHovered(true)}
-              onMouseLeave={() => setIsDarkToggleHovered(false)}
-              style={{
-                background: darkMode ? COLORS.status : COLORS.ink,
-                color: darkMode ? COLORS.ink : COLORS.white,
-                border: "none",
-                borderRadius: 12,
-                height: 42,
-                padding: "0 14px",
-                display: "flex",
-                alignItems: "center",
-                gap: "6px",
-                
-                cursor: "pointer",
-                fontFamily: FONTS.ui,
-              }}
-            >
-              Your personal bookshelf
-            </p>
+            
           </div>
 
           <HeaderActions
@@ -924,7 +833,7 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
               />
             </Field>
 
-            <button 
+            <HoverButton 
               onClick={saveEditedBook} 
               onMouseEnter={() => setIsSaveHovered(true)}
               onMouseLeave={() => setIsSaveHovered(false)}
@@ -1003,24 +912,29 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
 
               <button 
                 style={{ 
-                  ...btnWide, 
-                  background: COLORS.frame,
-                  transition: "all 0.3s ease",
-                  transform: isGenerateHovered ? "translateY(-4px)" : "translateY(0)",
-                  boxShadow: isGenerateHovered 
+                    ...btnWide, 
+                    background: COLORS.frame,
+                    transition: "all 0.3s ease",
+                    transform: isGenerateHovered ? "translateY(-4px)" : "translateY(0)",
+                    boxShadow: isGenerateHovered 
                     ? `0 10px 25px rgba(26, 75, 93, 0.35)` 
                     : "none", 
                 }}
                 onMouseEnter={() => setIsGenerateHovered(true)}
                 onMouseLeave={() => setIsGenerateHovered(false)}
-                onClick={() => {
-                  updateBookVoice(audioBook.id, selectedVoiceLocal);
-                  generateAudiobook(audioBook.id);
-                  closeAudioModal();
+                onClick={async () => {
+                    try {
+                    await updateBookVoice(audioBook.id, selectedVoiceLocal);
+                    await generateAudiobook(audioBook.id);
+                    closeAudioModal();
+                    } catch (e) {
+                    console.error("Generate audiobook failed:", e);
+                    alert("Failed to generate audiobook: " + e.message);
+                    }
                 }}
-              >
+                >
                 Generate Audiobook
-              </button>
+                </button>
             </div>
           )}
         </Modal>
@@ -1399,6 +1313,10 @@ function SearchTab({
 
 function HoverButton({ onClick, children, baseStyle, hoverShadow }) {
   const [isHovered, setIsHovered] = useState(false);
+  const getHoverLiftStyle = (isHovered) => ({
+    transform: isHovered ? "translateY(-4px)" : "translateY(0)",
+    transition: "transform 0.2s ease"
+  });
 
   return (
     <button
