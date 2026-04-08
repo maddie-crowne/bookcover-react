@@ -34,6 +34,11 @@ export default function Reader({ darkMode, setDarkMode }) {
   const audioRef = useRef(null);
   const allSpinePageCountsRef = useRef({});
   const isCountingRef = useRef(false);
+  const isAutoTurningRef = useRef(false);
+  const lastAutoTurnSentenceRef = useRef(null);
+  const pendingResumePlayRef = useRef(false);
+  const shouldAutoplayNextTrackRef = useRef(false);
+  const [playbackRate, setPlaybackRate] = useState(1);
 
   const [bookTotalPages, setBookTotalPages] = useState(0);
   const [user, setUser] = useState(null);
@@ -115,6 +120,10 @@ export default function Reader({ darkMode, setDarkMode }) {
     return `${m}:${String(r).padStart(2, "0")}`;
   }, [currentTime]);
 
+  useEffect(() => {
+    if (!audioRef.current) return;
+    audioRef.current.playbackRate = playbackRate;
+  }, [playbackRate, audioUrl]);
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => setUser(u));
     return () => unsub();
@@ -217,12 +226,13 @@ export default function Reader({ darkMode, setDarkMode }) {
     if (!a) return;
 
     const onEnded = () => {
-      if (currentTrackIndex + 1 < audioTracks.length) {
-        const next = currentTrackIndex + 1;
-        setCurrentTrackIndex(next);
-        setAudioUrl(audioTracks[next].url);
-      }
-    };
+        if (currentTrackIndex + 1 < audioTracks.length) {
+          const next = currentTrackIndex + 1;
+          shouldAutoplayNextTrackRef.current = true;
+          setCurrentTrackIndex(next);
+          setAudioUrl(audioTracks[next].url);
+        }
+      };
 
     const onTime = () => setCurrentTime(a.currentTime || 0);
 
@@ -234,6 +244,31 @@ export default function Reader({ darkMode, setDarkMode }) {
       a.removeEventListener("timeupdate", onTime);
     };
   }, [audioTracks, currentTrackIndex]);
+
+  useEffect(() => {
+    const a = audioRef.current;
+    if (!a || !audioUrl) return;
+  
+    const handleLoaded = async () => {
+      if (!shouldAutoplayNextTrackRef.current) return;
+  
+      try {
+        await a.play();
+      } catch (e) {
+        console.error("[Bookcover/Audio] autoplay next track failed:", e);
+      } finally {
+        shouldAutoplayNextTrackRef.current = false;
+      }
+    };
+  
+    a.addEventListener("loadedmetadata", handleLoaded);
+    a.addEventListener("canplay", handleLoaded);
+  
+    return () => {
+      a.removeEventListener("loadedmetadata", handleLoaded);
+      a.removeEventListener("canplay", handleLoaded);
+    };
+  }, [audioUrl]);
 
   useEffect(() => {
     if (!syncFile) {
@@ -394,13 +429,100 @@ export default function Reader({ darkMode, setDarkMode }) {
   };
 
   useEffect(() => {
-    if (!activeSyncItem?.sentence) {
+    const sentence = activeSyncItem?.sentence;
+  
+    if (!sentence) {
       clearHighlights();
+      lastAutoTurnSentenceRef.current = null;
       return;
     }
-
-    highlightActiveSentenceInView(activeSyncItem.sentence);
+  
+    if (lastAutoTurnSentenceRef.current === sentence) {
+      highlightActiveSentenceInView(sentence);
+      return;
+    }
+  
+    lastAutoTurnSentenceRef.current = sentence;
+    autoTurnToActiveSentence(sentence);
   }, [activeSyncItem, darkMode]);
+  const isSentenceVisibleInView = (sentence) => {
+    if (!sentence || !renditionRef.current) return false;
+  
+    const target = normalizeForMatch(sentence);
+    if (!target) return false;
+  
+    const contents = renditionRef.current.getContents?.() || [];
+  
+    for (const content of contents) {
+      try {
+        const doc = content.document;
+        const candidates = doc.querySelectorAll("p, div, li, blockquote");
+  
+        for (const el of candidates) {
+          const text = normalizeForMatch(el.textContent);
+          if (!text) continue;
+  
+          const firstWords = target.split(" ").slice(0, 6).join(" ");
+          const strongMatch =
+            text.includes(target) ||
+            target.includes(text) ||
+            (firstWords.length > 20 && text.includes(firstWords));
+  
+          if (strongMatch) return true;
+        }
+      } catch (e) {
+        console.error("[Bookcover/Sync] visibility check error:", e);
+      }
+    }
+  
+    return false;
+  };
+  const autoTurnToActiveSentence = async (sentence) => {
+    if (!sentence || !renditionRef.current || isAutoTurningRef.current) return;
+  
+    if (isSentenceVisibleInView(sentence)) {
+      highlightActiveSentenceInView(sentence);
+      return;
+    }
+  
+    isAutoTurningRef.current = true;
+  
+    const wasPlaying = !!audioRef.current && !audioRef.current.paused;
+    if (wasPlaying) {
+      audioRef.current.pause();
+      pendingResumePlayRef.current = true;
+    }
+  
+    try {
+      let attempts = 0;
+      const maxAttempts = 8;
+  
+      while (attempts < maxAttempts) {
+        attempts += 1;
+  
+        await renditionRef.current.next();
+  
+        await new Promise((resolve) => setTimeout(resolve, 150));
+        forceVisibleContents();
+  
+        if (isSentenceVisibleInView(sentence)) {
+          highlightActiveSentenceInView(sentence);
+          break;
+        }
+      }
+    } catch (e) {
+      console.error("[Bookcover/Sync] auto page turn failed:", e);
+    } finally {
+      isAutoTurningRef.current = false;
+  
+      if (pendingResumePlayRef.current && audioRef.current) {
+        pendingResumePlayRef.current = false;
+        audioRef.current.play().catch((err) => {
+          console.error("[Bookcover/Audio] resume after auto-turn failed:", err);
+        });
+      }
+    }
+  };
 
   const destroyReader = () => {
     try {
@@ -1471,9 +1593,53 @@ export default function Reader({ darkMode, setDarkMode }) {
               color: "#fff",
             }}
           />
+        <div
+        style={{
+            marginBottom: 10,
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            flexWrap: "wrap",
+        }}
+        >
+        <div
+            style={{
+            color: COLORS.white,
+            fontSize: 14,
+            fontWeight: 600,
+            marginRight: 4,
+            }}
+        >
+            Speed
+        </div>
 
-          <audio ref={audioRef} controls src={audioUrl || undefined} style={{ width: "100%" }} />
+        {[0.75, 1, 1.25, 1.5, 2].map((rate) => {
+            const active = playbackRate === rate;
 
+            return (
+            <button
+                key={rate}
+                onClick={() => setPlaybackRate(rate)}
+                style={{
+                padding: "6px 10px",
+                borderRadius: 10,
+                border: active
+                    ? "none"
+                    : "1px solid rgba(255,255,255,0.18)",
+                background: active ? COLORS.status : "rgba(255,255,255,0.08)",
+                color: active ? COLORS.ink : COLORS.white,
+                cursor: "pointer",
+                fontFamily: FONTS.ui,
+                fontSize: 13,
+                fontWeight: 600,
+                }}
+            >
+                {rate}×
+            </button>
+            );
+        })}
+        </div>
+        <audio ref={audioRef} controls src={audioUrl || undefined} style={{ width: "100%" }} />
           <div
             style={{
               marginTop: 12,
@@ -1486,6 +1652,9 @@ export default function Reader({ darkMode, setDarkMode }) {
           >
             <div>
               <b>Current time:</b> {mmss}
+            </div>
+            <div style={{ marginTop: 6 }}>
+            <b>Speed:</b> {playbackRate}×
             </div>
           </div>
 
