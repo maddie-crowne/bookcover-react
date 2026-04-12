@@ -25,12 +25,14 @@ const COLORS = {
 export default function Login() {
   const nav = useNavigate();
 
+  // COMPONENT STATE
   const [mode, setMode] = useState("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [status, setStatus] = useState("");
 
+  // HOVER STATES
   const [hoveredTab, setHoveredTab] = useState(null);
   const [hoveredInput, setHoveredInput] = useState(null);
   const [buttonHovered, setButtonHovered] = useState(false);
@@ -39,6 +41,7 @@ export default function Login() {
   const normalizedEmail = (email || "").trim();
   const isSignup = mode === "signup";
 
+  // Checks for error before trying to hit the Firebase API
   const validate = () => {
     if (!normalizedEmail) return "Please enter an email.";
     if (!password) return "Please enter a password.";
@@ -55,6 +58,9 @@ export default function Login() {
     return null;
   };
 
+  // 1 Checks the local form against errors using validate()
+  // 2 Creates the user in Firebase Auth.
+  // 3 Initializes a User document in Firestore 
   const signup = async () => {
     setStatus("");
     const err = validate();
@@ -84,7 +90,7 @@ export default function Login() {
       setStatus(`${e.code || "error"} — ${e.message}`);
     }
   };
-
+  // Authenticate agains Firebase Auth
   const login = async () => {
     setStatus("");
 
@@ -178,7 +184,7 @@ export default function Login() {
               : "Log in to your bookshelf and pick up where you left off."}
           </p>
         </div>
-
+        {/* Login and Create Account toggle */}
         <div style={tabRowStyle}>
           <button
             type="button"
@@ -229,7 +235,7 @@ export default function Login() {
             onMouseLeave={() => setHoveredInput(null)}
             autoComplete={isSignup ? "new-password" : "current-password"}
           />
-
+          {/* Only shows confirm password if in Create Account mode */}
           {isSignup && (
             <input
               type="password"
@@ -266,6 +272,7 @@ export default function Login() {
   );
 }
 
+// SHARED STYLE OBJECTS ACCROSS THE LOGIN
 const pageStyle = {
   minHeight: "100vh",
   display: "flex",
