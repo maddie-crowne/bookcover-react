@@ -116,16 +116,14 @@ export default function Terms({ darkMode, setDarkMode }) {
         </div>
 
         <Section title="1. About Bookcover">
-          Bookcover is a personal library utility that allows authenticated users to lookup, upload, store, and read e-books and audiobooks; as well as
-          generating the audio. It is not a distribution platform, or a public-facing service.
+          Bookcover is a <b>personal library</b> that allows authenticated users to lookup, upload, store, and read e-books and audiobooks;
+          generate the audio for an EPUB; and sync a (manually uploaded or generated) audio with an EPUB. It is not a distribution platform, or a public-facing service.
         </Section>
 
         <Section title="2. User-Uploaded Content and User Liability">
-          Bookcover does not curate, verify, or take responsibility for the origin, licensing status,
-          or provenance of any files manually uploaded by users. Bookcover is not responsible for the origin of
-          manually uploaded e-books or audiobooks. Responsibility for compliance with applicable copyright
-          law rests solely with the user. Bookcover and its developers shall not be liable for any damages arising from your
-          use of the platform, including any claims related to the content you choose to upload or access.
+          Bookcover does not curate, verify, or take responsibility for the origin, licensing status, or provenance of any files manually uploaded by users. 
+          Bookcover is not responsible for the origin of manually uploaded e-books or audiobooks. Bookcover and its developers shall not be liable for any 
+          damages arising from your use of the platform, including any claims related to the content you choose to upload or access.
         </Section>
 
         <Section title="3. Personal Use Only">
@@ -133,10 +131,8 @@ export default function Terms({ darkMode, setDarkMode }) {
         </Section>
 
         <Section title="4. Third-Party Sources">
-          Bookcover facilitates access to publicly available open-source content from third-party sources such as
-          Project Gutenberg and LibriVox. Such content is provided under their respective licences.
-          Bookcover makes no representations about the accuracy, completeness, or legality of content
-          obtained from external sources.
+          Bookcover facilitates access to publicly available open-source content from third-party sources such as Project Gutenberg and LibriVox. Such content is provided under their respective licences.
+          Bookcover makes no representations about the accuracy, completeness, or legality of content obtained from external sources.
         </Section>
 
         <Section title="5. Data Storage">
@@ -146,7 +142,7 @@ export default function Terms({ darkMode, setDarkMode }) {
         </Section>
 
         <Section title="6. Changes to These Terms">
-          These terms may be updated from time to time. Using Bookcover constitutes acceptance of the revised terms.
+          These terms may be updated. Using Bookcover constitutes acceptance of the revised terms. It is the user's responsibility to revise them from time to time.
         </Section>
 
         {/* Footer note */}
@@ -165,7 +161,7 @@ export default function Terms({ darkMode, setDarkMode }) {
             lineHeight: 1.7,
           }}>
             If you have questions about these terms, please contact the developers directly.
-            Bookcover is an independent team project.
+            Bookcover is a team project for CS 4605 (Georgia Institute of Technology, Mobile & Ubiquitous Computing, Spring 2026).
           </p>
         </div>
 

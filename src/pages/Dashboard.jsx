@@ -35,14 +35,15 @@ const AUDIO_VOICES = [
   ];
 
 const FONTS = {
-  headings: '"Merriweather", serif',
-  ui: '"Inter", sans-serif',
+  headings: '"Merriweather", serif', // serif font used for book titles and section headers
+  ui: '"Inter", sans-serif', // clean sans-serif for all UI chrome
   reading: '"Source Serif 4", serif',
   //ui: '"Inter", "Helvetica Neue", Arial, sans-serif',
   //reading: '"Libre Baskerville", Georgia, serif',
 };
 
-
+// width/height are the book card dimensions. 
+// lineClamp caps how many lines of the book title are shown
 const GRID_CONFIGS = {
   small: { width: 110, height: 165, gap: 16, fontSize: 11, lineClamp: 2 },
   medium: { width: 160, height: 240, gap: 24, fontSize: 14, lineClamp: 3 },
@@ -50,47 +51,50 @@ const GRID_CONFIGS = {
 };
 
 const DEFAULT_GENERATED_AUDIO_FIELDS = {
-  generated_audio_status: "idle",
-  generated_audio_progress: 0,
-  generated_audio_current: 0,
-  generated_audio_total: 0,
-  generated_audio_tracks: [],
+  generated_audio_status: "idle", // idle, running, ready, error
+  generated_audio_progress: 0, // 0-100 percent, shown in the progress bar
+  generated_audio_current: 0, // how many chunks have been processed so far
+  generated_audio_total: 0, // total number of chunks in the book
+  generated_audio_tracks: [], // array of storage paths, one per generated audio chunk
   generated_audio_error: null,
 };
 
-const GRID_SIZES = ["small", "medium", "large"];
-
+// turns a book title into a Firestore ID eg "Pride & Prejudice"  "pride--prejudice"
 const generateBookId = (title) =>
   title.toLowerCase().trim().replace(/[^a-z0-9]/g, "-");
 
+// Gutendex is a "JSON web API for Project Gutenberg ebook metadata" 
 const coverFromGutendex = (formats) => formats?.["image/jpeg"] || "";
 const epubFromGutendex = (formats) => formats?.["application/epub+zip"] || "";
+
+// looks up the label for a voice ID 
 const getVoiceLabel = (value) =>
     AUDIO_VOICES.find((v) => v.value === value)?.label || value;
 
 export default function Dashboard({ user, darkMode, setDarkMode }) {
-  const [gridSize, setGridSize] = useState("medium"); 
+  const [gridSize, setGridSize] = useState("medium");  // deafult layout choice: "small" "medium" "large"
   const [sortBy, setSortBy] = useState("recent");
-  const [books, setBooks] = useState([]);
+  const [books, setBooks] = useState([]); // live-synced array of the user's books from Firestore
   const [modalOpen, setModalOpen] = useState(false);
-  const [tab, setTab] = useState("upload"); // upload/search
+  const [tab, setTab] = useState("upload"); // upload/search IS THIS USED?
 
-  // upload state
+  // Manual Upload tab inputs
   const [upTitle, setUpTitle] = useState("");
-  const [upAudioFile, setUpAudioFile] = useState(null);
   const [upAuthor, setUpAuthor] = useState("");
-  const [upFile, setUpFile] = useState(null);
+  const [upFile, setUpFile] = useState(null); // the selected .epub File object
+  const [upAudioFile, setUpAudioFile] = useState(null); // the selected audio File object (mp3 for us)
   const [upStatus, setUpStatus] = useState("");
   
+  // Hover states of buttons
   const [isUploadHovered, setIsUploadHovered] = useState(false);
   const [isGenerateHovered, setIsGenerateHovered] = useState(false);
   const [isSyncHovered, setIsSyncHovered] = useState(false);
   const [isSearchHovered, setIsSearchHovered] = useState(false);
-  const [isLogoutHovered, setIsLogoutHovered] = useState(false);
-  const [isDarkToggleHovered, setIsDarkToggleHovered] = useState(false);
+  //const [isLogoutHovered, setIsLogoutHovered] = useState(false);
+  //const [isDarkToggleHovered, setIsDarkToggleHovered] = useState(false);
   const [isSaveHovered, setIsSaveHovered] = useState(false);
   const [selectedVoice, setSelectedVoice] = useState("en-US-GuyNeural");
-  const [hoveredSize, setHoveredSize] = useState(null);
+  const [hoveredSize, setHoveredSize] = useState(null);   // tracks which grid-size pill button the mouse is hovering 
 
   
   const THEME = darkMode ? {
@@ -109,27 +113,33 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
     border: COLORS.border,
   };
 
-  // search state
+  // "Add a new book" tab states: used when the user searches Gutenberg by title/author
   const [q, setQ] = useState("");
   const [searchStatus, setSearchStatus] = useState("");
   const [results, setResults] = useState([]);
 
-  // edit state
+  // "Edit" states
   const [editOpen, setEditOpen] = useState(false);
-  const [editBook, setEditBook] = useState(null);
+  const [editBook, setEditBook] = useState(null); // the book object currently being edited
+  const [editTitle, setEditTitle] = useState("");
+  const [editAuthor, setEditAuthor] = useState("");
+  const [editEpubFile, setEditEpubFile] = useState(null); // new EPUB to replace the existing one, or null if unchanged
+  const [editAudioFile, setEditAudioFile] = useState(null); // new audio file, or null if unchanged
+  const [editStatus, setEditStatus] = useState("");
+  
+  // "Audio" states: used when the user picks an AI voice to generate audio for an EPUB 
   const [audioOpen, setAudioOpen] = useState(false);
   const [audioBook, setAudioBook] = useState(null);
+  const [selectedVoiceLocal, setSelectedVoiceLocal] = useState("en-US-GuyNeural");
+  
+  // "Sync" states: user can choose whether to sync the manually uploaded audio or the AI-generated audio
   const [syncOpen, setSyncOpen] = useState(false);
   const [syncBook, setSyncBook] = useState(null);
   const [syncSelection, setSyncSelection] = useState("default");
-  const [selectedVoiceLocal, setSelectedVoiceLocal] = useState("en-US-GuyNeural");
-  const [editTitle, setEditTitle] = useState("");
-  const [editAuthor, setEditAuthor] = useState("");
-  const [editEpubFile, setEditEpubFile] = useState(null);
-  const [editAudioFile, setEditAudioFile] = useState(null);
-  const [editStatus, setEditStatus] = useState("");
 
   const booksCol = useMemo(() => collection(db, "Users", user.uid, "Books"), [user.uid]);
+  
+  // derives a transformed list from 'books'. This block only re-runs if a book is added/removed or sortBy is modified
   const sortedBooks = useMemo(() => {
     const list = [...books];
     if (sortBy === "title-asc") list.sort((a, b) => (a.title || "").localeCompare(b.title || ""));
@@ -141,6 +151,8 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
     if (sortBy === "audio") return list.filter(b => !!b.audio_link || !!b.audio_storage_path);
     return list;
   }, [books, sortBy]);
+
+  // opens a real-time Firestore listener that keeps the books array in sync with the DB.
   useEffect(() => {
     const unsub = onSnapshot(booksCol, (snap) => {
       const list = [];
@@ -163,7 +175,7 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
       }
     }
   };
-
+  // EDIT MODAL
   const openEditModal = (book) => {
     setEditBook(book);
     setEditTitle(book.title || "");
@@ -182,28 +194,6 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
     setEditAudioFile(null);
     setEditStatus("");
   };
-
-  const openAudioModal = (book) => {
-    setAudioBook(book);
-    setSelectedVoiceLocal(book.generated_audio_voice || "en-US-GuyNeural");
-    setAudioOpen(true);
-  };
-  const closeAudioModal = () => {
-    setAudioOpen(false);
-    setAudioBook(null);
-  };
-
-  const openSyncModal = (book) => {
-    setSyncBook(book);
-    setSyncSelection("default");
-    setSyncOpen(true);
-  };
-
-  const closeSyncModal = () => {
-    setSyncOpen(false);
-    setSyncBook(null);
-  };
-
   const saveEditedBook = async () => {
     if (!editBook) return;
 
@@ -215,7 +205,7 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
         author: editAuthor.trim() || "Unknown",
         updatedAt: serverTimestamp(),
       };
-
+      // Upload a new EPUB
       if (editEpubFile) {
         setEditStatus("Uploading new EPUB...");
         const epubPath = `epubs/${user.uid}/${editBook.id}.epub`;
@@ -231,13 +221,37 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
         updates.audio_storage_path = audioPath;
         updates.audio_source = "upload";
       }
-
+      // merge: true means we only overwrite the fields in updates dictionary
       setEditStatus("Saving changes...");
       await setDoc(getBookDocRef(user.uid, editBook.id), updates, { merge: true });
       closeEditModal();
     } catch (e) {
       setEditStatus("Edit failed: " + e.message);
     }
+  };
+
+  // AUDIO MODAL
+  const openAudioModal = (book) => {
+    setAudioBook(book);
+    // pre-select whichever voice was last saved to this book, defaulting to US Male
+    setSelectedVoiceLocal(book.generated_audio_voice || "en-US-GuyNeural");
+    setAudioOpen(true);
+  };
+  const closeAudioModal = () => {
+    setAudioOpen(false);
+    setAudioBook(null);
+  };
+
+  // SYNC MODAL
+  const openSyncModal = (book) => {
+    setSyncBook(book);
+    setSyncSelection("default");
+    setSyncOpen(true);
+  };
+
+  const closeSyncModal = () => {
+    setSyncOpen(false);
+    setSyncBook(null);
   };
 
   const deleteBook = async (book) => {
@@ -247,13 +261,14 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
     if (!confirmed) return;
 
     try {
+      // note: this only removes the Firestore document — the actual files in Firebase Storage are NOT deleted
       await deleteDoc(getBookDocRef(user.uid, book.id));
     } catch (e) {
       alert("Delete failed: " + e.message);
     }
   };
 
-  // upload manually
+  // UPLOAD TAB - ie upload manually
   const uploadManualFiles = async () => {
     setUpStatus("");
 
@@ -328,6 +343,7 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
     }
   };
 
+  // gutenberg search
   const searchGutenberg = async () => {
     setSearchStatus("");
     setResults([]);
@@ -389,6 +405,7 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
       alert("Could not reach LibriVox audio processor: " + e.message);
     }
   };
+  // GENERATE AUDIO
   const generateAudiobook = async (bookId) => {
     try {
       const res = await fetch(`${AUDIO_SERVICE_BASE_URL}/generate-audio`, {
@@ -428,6 +445,7 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
       { merge: true }
     );
   };
+  
   const addEpub = async (book) => {
     const id = generateBookId(book.title);
 
@@ -508,6 +526,7 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
       }}
     >
       <div style={{ maxWidth: 1100, margin: "0 auto", padding: "24px 16px 40px" }}>
+        {/* header */}
         <div
           style={{
             display: "flex",
@@ -544,7 +563,7 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
           <p style={{ margin: "6px 0 0", color: COLORS.mutedInk, fontSize: 13, fontFamily: FONTS.ui }}>
           </p>
         </div>
-
+        {/* grid layout size picker */}
         <div style={{ display: "flex", width: "100%", boxSizing: "border-box", gap: 6, background: darkMode ? "rgba(255,255,255,0.08)" : "rgba(18, 38, 48, 0.06)", padding: 4, borderRadius: 10 }}>
           {["small", "medium", "large"].map((size) => (
             <button
@@ -583,7 +602,7 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
             </button>
           ))}
         </div>
-
+        {/* sort by ... */}
         <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "12px 0" }}>
           <span style={{ fontSize: 13, color: COLORS.mutedInk, fontFamily: FONTS.ui }}>Sort by:</span>
           <select
@@ -610,7 +629,7 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
             <option value="audio">Audio only</option>
           </select>
         </div>
-
+        {/* book grid */}
         <div style={{ 
           display: "grid", 
           gridTemplateColumns: `repeat(auto-fill, ${GRID_CONFIGS[gridSize].width}px)`, 
@@ -642,7 +661,7 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
           />
             ))}
         </div>
-
+        {/* Add book modal */}
         <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="Add a new book">
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
             <TabButton active={tab === "upload"} onClick={() => setTab("upload")}>
@@ -791,7 +810,7 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
             </div>
           )}
         </Modal>
-
+        {/* EDIT BOOK MODAL */}
         <Modal open={editOpen} onClose={closeEditModal} title="Edit book">
           <div>
             <Row>
@@ -866,7 +885,7 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
             )}
           </div>
         </Modal>
-
+        {/* AUDIO MODAL */}
         <Modal open={audioOpen} onClose={closeAudioModal} title="Audio Settings">
           {audioBook && (
             <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
@@ -938,12 +957,12 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
             </div>
           )}
         </Modal>
-
+        {/* SYNC MODAL */}
         <Modal open={syncOpen} onClose={closeSyncModal} title="Sync">
           {syncBook && (
             <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
               
-              {/* Section 1: Text File Info */}
+              {/* Current Text File Info */}
               <div>
                 <label style={{ fontSize: 12, fontWeight: 800, color: THEME.mutedInk, textTransform: "uppercase", marginBottom: 8, display: "block" }}>
                   Current Text File
@@ -953,7 +972,7 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
                 </div>
               </div>
 
-              {/* Section 2: Audio Source Selection */}
+              {/* Selecting Audio Source To Sync */}
               <div>
                 <label style={{ fontSize: 12, fontWeight: 800, color: THEME.mutedInk, textTransform: "uppercase", marginBottom: 8, display: "block" }}>
                   Select Audio Source to Sync
@@ -1039,7 +1058,7 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
         </Modal>
 
       </div>
-    
+      {/* FOOTER */}
       <div style={{
         textAlign: "center",
         padding: "20px 0 32px",
@@ -1058,13 +1077,14 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
           Terms of Use
         </a>
         {" · "}
-        <span>© {new Date().getFullYear()} Bookcover</span>
+        <span>{new Date().getFullYear()} Bookcover</span>
       </div>
 
     </div>
   );
 }
 
+// Sub-componentes
 function HeaderActions({ user, darkMode, setDarkMode, onLogout, theme }) {
   return (
     <div
@@ -1093,7 +1113,7 @@ function HeaderActions({ user, darkMode, setDarkMode, onLogout, theme }) {
       >
         {user.email}
       </span>
-
+      {/* logout icon */}
       <HoverButton
         onClick={onLogout}
         baseStyle={{
@@ -1159,7 +1179,7 @@ function HeaderActions({ user, darkMode, setDarkMode, onLogout, theme }) {
   );
 }
 
-function UploadTab({
+/*function UploadTab({
   upTitle,
   setUpTitle,
   upAuthor,
@@ -1309,8 +1329,9 @@ function SearchTab({
       </div>
     </div>
   );
-}
+}*/
 
+// Generic lift-on-hover button — keeps hover logic out of call sites
 function HoverButton({ onClick, children, baseStyle, hoverShadow }) {
   const [isHovered, setIsHovered] = useState(false);
   const getHoverLiftStyle = (isHovered) => ({
@@ -1332,7 +1353,7 @@ function HoverButton({ onClick, children, baseStyle, hoverShadow }) {
     </button>
   );
 }
-
+// function to add a nex book to the bookshelf
 function AddTile({ onClick, size, darkMode }) {
   const [isHovered, setIsHovered] = useState(false);
   const config = GRID_CONFIGS[size];
@@ -1351,11 +1372,10 @@ function AddTile({ onClick, size, darkMode }) {
         cursor: "pointer",
         transition: "transform 0.3s ease", 
         transform: isHovered ? "translateY(-4px)" : "translateY(0)",
-        //alignItems: "center",
-        //justifyContent: "center",
-        //textAlign: "center",
+
       }}
     >
+      {/* dashed "add" box */}
       <div style={{
         width: config.width, //"160px",
         height: config.height, //"240px",
@@ -1445,7 +1465,7 @@ function BookTile({
     const generationProgress = book.generated_audio_progress || 0;
     const generationCurrent = book.generated_audio_current || 0;
     const generationTotal = book.generated_audio_total || 0;
-  
+    // label for the top-left badge on the cover
     const badgeText =
       hasEpub && (hasAudio || hasGeneratedAudio)
         ? "EPUB + Audio"
@@ -1455,7 +1475,7 @@ function BookTile({
         ? "Audio"
         : "Book";
   
-    // dynamic book size for each grid layout (small, medium, large)
+    // book size for each grid layout (small, medium, large)
     const btnSize = {
       small:  { fontSize: 9,  padding: "3px 6px",  borderRadius: 6,  gap: 3 },
       medium: { fontSize: 11, padding: "6px 10px", borderRadius: 8,  gap: 5 },
@@ -1463,39 +1483,6 @@ function BookTile({
     }[size] || { fontSize: 11, padding: "6px 10px", borderRadius: 8, gap: 5 };
 
     const actionButtonStyle = {
-      /*border: "1px solid rgba(255,255,255,0.18)",
-      background: COLORS.ink,
-      color: "#fff",
-      padding: "7px 10px",
-      borderRadius: 8,
-      fontWeight: 700,
-      cursor: "pointer",
-      fontSize: 11,
-      backdropFilter: "blur(4px)",
-      transition: "all 0.2s ease",*/
-      
-      /*background: COLORS.frame, // Not 100% white, lets a tiny bit of color through
-      backdropFilter: "blur(4px)",            // Softens the background behind the button
-      color: "#fff",                      // Your 'ink' color for text
-      border: "1px solid rgba(255,255,255,0.18)",
-      padding: "7px 10px",
-      borderRadius: 8,
-      fontWeight: 700,
-      cursor: "pointer",
-      fontSize: 11,
-      backdropFilter: "blur(4px)",
-      transition: "all 0.2s ease",
-      ...btnSize,*/
-      /*background: "rgba(255,255,255,0.82)",
-      color: COLORS.ink,
-      border: `1px solid ${COLORS.border}`,
-      fontWeight: 700,
-      cursor: "pointer",
-      fontFamily: FONTS.ui,
-      letterSpacing: "0.02em",
-      boxShadow: "0 2px 8px rgba(18,38,48,0.08)",
-      transition: "all 0.3s ease",
-      ...btnSize,*/
       background: COLORS.frame,
       color: COLORS.white,
       border: "1px solid transparent",
@@ -1518,13 +1505,6 @@ function BookTile({
 
     const disabledButtonStyle = {
       ...actionButtonStyle,
-      /*background: "#E0E0E0", 
-      color: darkMode ? "#707070" : "#999999",
-      border: `1px solid rgba(18,38,48,0.06)`,
-      cursor: "pointer",
-      boxShadow: "none",*/
-      //backdropFilter: "blur(4px)",
-      //opacity: 1,
       background: "rgba(18,38,48,0.15)",
       color: "rgba(18,38,48,0.4)",
       boxShadow: "none",
@@ -1535,24 +1515,17 @@ function BookTile({
     const [selectedVoiceLocal, setSelectedVoiceLocal] = useState(
       book.generated_audio_voice || "en-US-GuyNeural"
     );
-  
+    // lift + shadow effect for a given button id
     const hoverStyle = (id) => ({
       //boxShadow: hoveredBtn === id ? "0 8px 20px rgba(26, 75, 93, 0.4)" : "none",
       transform: hoveredBtn === id ? "translateY(-3px)" : "translateY(0)",
-      /*boxShadow: hoveredBtn === id
-        ? "0 8px 20px rgba(26, 75, 93, 0.4)"
-        : "0 2px 8px rgba(18,38,48,0.10)",
-      background: hoveredBtn === id
-        ? (id === "delete" ? "rgba(142,36,36,0.2)" : COLORS.frame)
-        : undefined,
-      color: hoveredBtn === id && id !== "delete" ? COLORS.white : undefined,*/
       boxShadow: hoveredBtn === id
         ? id === "delete"
           ? "0 8px 20px rgba(142,36,36,0.4)"
           : "0 8px 20px rgba(26,75,93,0.4)"
         : "0 2px 8px rgba(18,38,48,0.08)",
     });
-  
+    // if the button has a cover image, use it as a background image, otherwise show a gradient pinkish bacgroudn
     const coverStyle = book.cover_url
       ? {
           backgroundImage: `url('${book.cover_url}')`,
@@ -1564,33 +1537,8 @@ function BookTile({
           background:
             "linear-gradient(160deg, rgb(194, 211, 236) 0%, rgb(215, 232, 228) 55%, rgb(184, 204, 230) 100%)",
         };
-  
-    /*const panelTitleStyle = {
-      fontFamily: FONTS.headings,
-      fontWeight: 800,
-      fontSize: 13,
-      color: darkMode ? "#e8e8f0" : COLORS.ink,  // ← uses ink not white
-      marginBottom: 10,
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "center",
-    };
 
-    const panelStyle = {
-      position: "absolute",
-      top: 0, left: 0, right: 0, bottom: 0,
-      background: darkMode ? "rgba(22,33,62,0.96)" : "rgba(249,234,234,0.96)",
-      backdropFilter: "none",
-      borderRadius: "2px 8px 8px 2px",
-      padding: 12,
-      overflowY: "auto",
-      zIndex: 10,
-      display: "flex",
-      flexDirection: "column",
-      gap: 10,
-    };*/
-
-    const sectionLabelStyle = {
+    /*const sectionLabelStyle = {
       fontSize: 10,
       fontWeight: 800,
       letterSpacing: "0.06em",
@@ -1629,7 +1577,7 @@ function BookTile({
         ? book.epub_storage_path.split("/").pop()
         : book.epub_link
         ? book.epub_link.split("/").pop()
-        : null;
+        : null;*/
 
     return (
       <div
@@ -1639,6 +1587,7 @@ function BookTile({
           gap: 10,
         }}
       >
+        {/* cover of the book */}
         <div
           style={{
             position: "relative",
@@ -1657,6 +1606,7 @@ function BookTile({
           onMouseEnter={(e) => {
             e.currentTarget.style.transform = "translateY(-8px)";
             e.currentTarget.style.boxShadow = "0 20px 40px rgba(18,38,48,0.35), 0 8px 16px rgba(18,38,48,0.2)";
+            // directly toggles the overlay opacity using the DOM
             const overlay = e.currentTarget.querySelector(".book-hover-overlay");
             if (overlay) overlay.style.opacity = "1";
           }}
@@ -1688,7 +1638,8 @@ function BookTile({
             {badgeText}
           </div>
           
-          {/* ── Hover overlay ── */}
+          {/* Hover overlay that fades in over the cover and shows the action buttons. stopPropagation on the overlay prevents clicking a button from also triggering
+            the cover's onClick (which would navigate to the reader). */}
           <div
             className="book-hover-overlay"
             style={{
@@ -1715,7 +1666,7 @@ function BookTile({
             {true && (
               <div style={{ display: "flex", flexDirection: "column", height: "100%", width: "100%", boxSizing: "border-box" }}>
                 
-                {/* Row 1: Reader + Player side by side */}
+                {/* Row 1: Reader + Player side by side, they are greyed out and unavailable to click if the file type isn't available */}
                 <div style={{ display: "flex", gap: btnSize.gap }}>
                   <button
                     style={{ ...( hasEpub ? actionButtonStyle : disabledButtonStyle ), ...hoverStyle("reader"), flex: 1, textAlign: "center" }}
@@ -1738,7 +1689,7 @@ function BookTile({
 
                 <div style={{ flexGrow: 1 }} />
 
-                {/* Row 2: Audio full width */}
+                {/* Row 2: Audio full width button that opens the pop-up */}
                 <div style={{ display: "flex", flexDirection: "column", gap: btnSize.gap }}>
                 <button
                   style={{ ...actionButtonStyle, ...hoverStyle("audio"), display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center" }}
@@ -1746,6 +1697,7 @@ function BookTile({
                   onMouseLeave={() => setHoveredBtn(null)}
                   onClick={(e) => { e.stopPropagation(); onOpenAudio(); }}
                 >
+                  {/* drawing the settings wheel icon */}
                   <svg 
                     width="16" 
                     height="16" 
@@ -1766,7 +1718,6 @@ function BookTile({
                 
 
                 {/* Row 3: Sync full width */}
-                
                 <button
                   style={{ ...actionButtonStyle, ...hoverStyle("sync"), display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center" }}
                   onMouseEnter={() => setHoveredBtn("sync")}
@@ -1821,13 +1772,10 @@ function BookTile({
 
               </div>
             )}
-
-            
-            
           </div>
         </div>
 
-        {/* Below-card info */}
+        {/* Below-card info: title author, and generation status */}
         <div
           style={{
             width: config.width,
@@ -1857,7 +1805,7 @@ function BookTile({
           <div style={{ fontSize: config.fontSize - 2, color: mutedColor, lineHeight: 1.3 }}>
             {book.author || "Unknown"}
           </div>
-
+          {/* progress bar — only visible while the audio service is actively generating */}
           {isGenerating && (
             <div style={{ marginTop: 8 }}>
               <div style={{ fontSize: 11, color: mutedColor, marginBottom: 4 }}>
@@ -1894,13 +1842,14 @@ function BookTile({
           
 
    
-
+// Renders a single result row in the Gutenberg search results list.
+// Each card lets the user add just the EPUB, find matching LibriVox audio, or add both at once.
 function SearchResultCard({ book, onAddEpub, onFindAudio, onAddAudio, onAddBoth }) {
   const [rowStatus, setRowStatus] = useState("");
   const [audioLink, setAudioLink] = useState("");
 
   const hasEpub = !!book.epub_link;
-
+  // inline SVG used as a fallback when a Gutenberg book doesn't have a cover image
   const coverFallback =
     "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='180'%3E%3Crect width='100%25' height='100%25' fill='%23f3f4f6'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' fill='%236b7280' font-family='Arial' font-size='14'%3ENo%20Cover%3C/text%3E%3C/svg%3E";
 
@@ -1989,6 +1938,7 @@ function SearchResultCard({ book, onAddEpub, onFindAudio, onAddAudio, onAddBoth 
             Add both
           </button>
 
+          {/* these only appear after findAudioClick succeeds and sets audioLink */}
           {audioLink && (
             <>
               <a href={audioLink} target="_blank" rel="noreferrer" style={miniPreview}>
@@ -2009,6 +1959,7 @@ function SearchResultCard({ book, onAddEpub, onFindAudio, onAddAudio, onAddBoth 
   );
 }
 
+// Tab button at the top of the Add Book modal to switch between "Manual upload" and "Search" tabs
 function TabButton({ active, onClick, children }) {
   const [isHovered, setIsHovered] = useState(false);
 
@@ -2042,8 +1993,9 @@ function TabButton({ active, onClick, children }) {
     </button>
   );
 }
-
+// LAYOUT HELPERS
 function Row({ children }) {
+  // places fields side-by-side and allows them to wrap onto a new line on small screens
   return (
     <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
       {children}
@@ -2052,6 +2004,7 @@ function Row({ children }) {
 }
 
 function Field({ label, children }) {
+  // for consistent spacing and label styling
   return (
     <div
       style={{
@@ -2079,10 +2032,6 @@ function Field({ label, children }) {
 }
 
 const gridStyle = {
-  /*display: "grid",
-  gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))",
-  gap: 24,
-  alignItems: "start",*/
   display: "grid",
   gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))",
   gap: "40px 24px", // Increased vertical gap to make room for the shelf
@@ -2092,6 +2041,7 @@ const gridStyle = {
   borderBottom: "8px solid #3d2b1f",
 };
 
+// SHARED STYLE OBJECTS ACCROSS THE DASHBOARD
 const inputStyle = {
   padding: "13px 14px",
   border: `1px solid ${COLORS.border}`,

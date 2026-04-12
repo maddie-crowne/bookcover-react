@@ -28,45 +28,51 @@ export default function Reader({ darkMode, setDarkMode }) {
   const { bookId } = useParams();
   const navigate = useNavigate();
 
-  const viewerRef = useRef(null);
-  const bookRef = useRef(null);
-  const renditionRef = useRef(null);
-  const audioRef = useRef(null);
-  const allSpinePageCountsRef = useRef({});
-  const isCountingRef = useRef(false);
-  const isAutoTurningRef = useRef(false);
-  const lastAutoTurnSentenceRef = useRef(null);
-  const pendingResumePlayRef = useRef(false);
-  const shouldAutoplayNextTrackRef = useRef(false);
+  // refs are used instead of state here because changes to these values should NOT trigger re-renders 
+  const viewerRef = useRef(null); // DOM node that epubjs renders the book into
+  const bookRef = useRef(null); // the epubjs Book instance
+  const renditionRef = useRef(null); 
+  const audioRef = useRef(null); // the <audio> that was synced/chosen in the Dashboard 
+
+  const allSpinePageCountsRef = useRef({}); // cache of page counts per spine item, built during the initial page-counting pass
+  const isCountingRef = useRef(false); // prevents the "relocated" event from updating page state while we're counting
+  const isAutoTurningRef = useRef(false); // prevents concurrent auto-turn attempts when sync triggers a page turn
+  const lastAutoTurnSentenceRef = useRef(null); // tracks which sentence last triggered an auto-turn so we don't repeat it
+  const pendingResumePlayRef = useRef(false); // igf audio was playing when an auto-turn started, resume it after the turn
+  const shouldAutoplayNextTrackRef = useRef(false); // set to true when a track ends naturally so the next one autoplays
   const [playbackRate, setPlaybackRate] = useState(1);
 
   const [bookTotalPages, setBookTotalPages] = useState(0);
   const [user, setUser] = useState(null);
   const [status, setStatus] = useState("Upload an EPUB and an MP3 to begin.");
-
   const [remoteBook, setRemoteBook] = useState(null);
 
+  // EPUB source: either a File object (local upload) or a URL string (from Firebase Storage or Gutenberg)
   const [epubFile, setEpubFile] = useState(null);
   const [epubUrl, setEpubUrl] = useState(null);
 
+  // Audio source: supports single file, multi-track (generated audio), or a direct URL
   const [audioFile, setAudioFile] = useState(null);
   const [audioUrl, setAudioUrl] = useState(null);
-  const [audioTracks, setAudioTracks] = useState([]);
+  const [audioTracks, setAudioTracks] = useState([]); // array of track objects when the book has multi-chapter audio
   const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
-  const [currentTime, setCurrentTime] = useState(0);
+  const [currentTime, setCurrentTime] = useState(0); // updated every second 
 
-  const [toc, setToc] = useState([]);
-  const [progress, setProgress] = useState(0);
+  const [toc, setToc] = useState([]); // table of contents from the EPUB's navigation document
+  const [progress, setProgress] = useState(0); // 0-100 reading progress shown in the progress bar
   const [currentPage, setCurrentPage] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
 
+  // Default Reader display settings
   const [fontSize, setFontSize] = useState(100);
   const [fontFamily, setFontFamily] = useState('"Libre Baskerville", Georgia, serif');
   const [spread, setSpread] = useState("none");
+  // refs that mirror state values so they can be read inside epubjs hooks and callbacks
   const fontFamilyRef = useRef(fontFamily);
   const fontSizeRef = useRef(fontSize);
   const darkModeRef = useRef(darkMode);
 
+  // hover states for toolbar buttons above the rendered EPUB
   const [hoverPrev, setHoverPrev] = useState(false);
   const [hoverNext, setHoverNext] = useState(false);
   const [hoverSave, setHoverSave] = useState(false);
@@ -77,18 +83,22 @@ export default function Reader({ darkMode, setDarkMode }) {
   const [hoverSinglePage, setHoverSinglePage] = useState(false);
   const [hoverDoublePage, setHoverDoublePage] = useState(false);
   const [isLogoutHovered, setIsLogoutHovered] = useState(false);
-  const [locationsReady, setLocationsReady] = useState(false);
-  const [isCountingPages, setIsCountingPages] = useState(false);
+  //const [locationsReady, setLocationsReady] = useState(false);
   const [hoveredFont, setHoveredFont] = useState(null);
-  const [bookmarks, setBookmarks] = useState([]);
-  const [currentCfi, setCurrentCfi] = useState(null);
   const [hoverBookmark, setHoverBookmark] = useState(false);
 
-  // Sync state
+  const [isCountingPages, setIsCountingPages] = useState(false);
+
+  // bookmarks are stored in localStorage so they persist between sessions without needing a backend
+  const [bookmarks, setBookmarks] = useState([]);
+  const [currentCfi, setCurrentCfi] = useState(null); // CFI = Canonical Fragment Identifier, epubjs way of identifying a position in a book
+
+  // Sync states: the read-along feature that highlights the currently spoken sentence in the EPUB it requires a JSON file with [{sentence, start, end}] entries matched to audio timestamps
   const [syncFile, setSyncFile] = useState(null);
   const [syncData, setSyncData] = useState([]);
   const [activeSyncIndex, setActiveSyncIndex] = useState(-1);
 
+  // DARKMODE STYLEGUIDE PALETTE
   const THEME = darkMode
     ? {
         canvas: "#1a1a2e",
@@ -113,6 +123,7 @@ export default function Reader({ darkMode, setDarkMode }) {
 
   const log = (...args) => console.log("[Bookcover/EPUB]", ...args);
 
+  // formats the current audio time as M:SS for display in the sidebar
   const mmss = useMemo(() => {
     const s = Math.floor(currentTime);
     const m = Math.floor(s / 60);
@@ -120,20 +131,26 @@ export default function Reader({ darkMode, setDarkMode }) {
     return `${m}:${String(r).padStart(2, "0")}`;
   }, [currentTime]);
 
+  // keep the audio element's playbackRate in sync with the speed buttons
   useEffect(() => {
     if (!audioRef.current) return;
     audioRef.current.playbackRate = playbackRate;
   }, [playbackRate, audioUrl]);
+
+  // subscribe to Firebase auth so we know who's reading (needed for fetching their books)
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => setUser(u));
     return () => unsub();
   }, []);
+
+  // keep the refs in sync with their state counterparts 
   useEffect(() => {
     fontFamilyRef.current = fontFamily;
     fontSizeRef.current = fontSize;
     darkModeRef.current = darkMode;
   }, [fontFamily, fontSize, darkMode]);
 
+  // load bookmarks from localStorage when the page opens
   useEffect(() => {
     if (!bookId) return;
     try {
@@ -142,6 +159,7 @@ export default function Reader({ darkMode, setDarkMode }) {
     } catch {}
   }, [bookId]);
 
+  // fetch the book document from Firestore and resolve all file URLs from Firebase Storage. Handles 3 scenarios: AI-generated tracks, LibriVox multi-chapter tracks, and a single uploaded file.
   useEffect(() => {
     if (!user || !bookId) return;
 
@@ -162,6 +180,7 @@ export default function Reader({ darkMode, setDarkMode }) {
 
         setRemoteBook(data);
 
+        // resolve EPUB: check Firebase Storage, direct link
         if (data.epub_storage_path) {
           const url = await getDownloadURL(ref(storage, data.epub_storage_path));
           if (!cancelled) setEpubUrl(url);
@@ -171,6 +190,7 @@ export default function Reader({ darkMode, setDarkMode }) {
           if (!cancelled) setEpubUrl(null);
         }
 
+        // resolve audio: check for multi-track first, then LibriVox, then single file
         if (data.generated_audio_tracks?.length > 0) {
           const resolvedTracks = [];
           for (const track of data.generated_audio_tracks) {
@@ -183,6 +203,7 @@ export default function Reader({ darkMode, setDarkMode }) {
             setAudioUrl(resolvedTracks[0]?.url || null);
           }
         } else if (data.librivox_audio_tracks?.length > 0) {
+          // LibriVox tracks are stored the same way as generated tracks
           const resolvedTracks = [];
           for (const track of data.librivox_audio_tracks) {
             const url = await getDownloadURL(ref(storage, track.storage_path));
@@ -214,6 +235,7 @@ export default function Reader({ darkMode, setDarkMode }) {
     };
   }, [user, bookId]);
 
+  // when a user uploads an audio file manually, create a blob URL for the audio, revoke it on cleanup to avoid memory leaks.
   useEffect(() => {
     if (!audioFile) return;
     const url = URL.createObjectURL(audioFile);
@@ -221,6 +243,7 @@ export default function Reader({ darkMode, setDarkMode }) {
     return () => URL.revokeObjectURL(url);
   }, [audioFile]);
 
+  // handle track ending: automatically advance to the next track if there is one. also keep currentTime updated so the sync feature can track the playhead position.
   useEffect(() => {
     const a = audioRef.current;
     if (!a) return;
@@ -245,6 +268,7 @@ export default function Reader({ darkMode, setDarkMode }) {
     };
   }, [audioTracks, currentTrackIndex]);
 
+  // when the next track's audio is ready to play, autoplay it if the previous track ended naturally
   useEffect(() => {
     const a = audioRef.current;
     if (!a || !audioUrl) return;
@@ -270,6 +294,7 @@ export default function Reader({ darkMode, setDarkMode }) {
     };
   }, [audioUrl]);
 
+  // parse the uploaded sync JSON file into an array of {sentence, start, end} objects
   useEffect(() => {
     if (!syncFile) {
       setSyncData([]);
@@ -296,11 +321,13 @@ export default function Reader({ darkMode, setDarkMode }) {
     };
   }, [syncFile]);
 
+  // the sync entry whose time range contains the current audio playhead position
   const activeSyncItem =
     activeSyncIndex >= 0 && activeSyncIndex < syncData.length
       ? syncData[activeSyncIndex]
       : null;
 
+  // find which sync entry is active based on the current audio time
   useEffect(() => {
     if (!Array.isArray(syncData) || syncData.length === 0) {
       setActiveSyncIndex(-1);
@@ -329,6 +356,8 @@ export default function Reader({ darkMode, setDarkMode }) {
     }
   };
 
+  // saves the currently open EPUB to the user's Firestore bookshelf
+  // only for manually uploaded files, books loaded from the library are already saved
   const saveCurrentBook = async () => {
     if (!user) {
       alert("Please log in first.");
@@ -359,6 +388,7 @@ export default function Reader({ darkMode, setDarkMode }) {
     }
   };
 
+  // strips extra whitespace and normalises smart quotes so that text from the sync JSON 
   const normalizeForMatch = (text) =>
     (text || "")
       .replace(/\s+/g, " ")
@@ -367,6 +397,8 @@ export default function Reader({ darkMode, setDarkMode }) {
       .trim()
       .toLowerCase();
 
+  // removes any sentence highlight styles we applied to the EPUB's iframe DOM.
+  // called before applying a new highlight so only one sentence is highlighted at a time.
   const clearHighlights = () => {
     const contents = renditionRef.current?.getContents?.() || [];
 
@@ -388,6 +420,8 @@ export default function Reader({ darkMode, setDarkMode }) {
     });
   };
 
+  // finds the paragraph in the EPUB's iframe that best matches the given sentence string
+  // and applies a highlight style to it. uses a fuzzy "first 6 words" match as a fallback for cases where the sync JSON and EPUB text don't match character-for-character.
   const highlightActiveSentenceInView = (sentence) => {
     if (!sentence || !renditionRef.current) return;
 
@@ -428,6 +462,8 @@ export default function Reader({ darkMode, setDarkMode }) {
     }
   };
 
+  // when the active sync sentence changes, either highlight it in place (if already visible) or trigger an auto-turn to bring it into view.
+  // also re-runs when darkMode changes so the highlight color updates without a page turn.
   useEffect(() => {
     const sentence = activeSyncItem?.sentence;
   
@@ -441,7 +477,8 @@ export default function Reader({ darkMode, setDarkMode }) {
       highlightActiveSentenceInView(sentence);
       return;
     }
-  
+    // if it's the same sentence as the last auto-turn, just re-apply the highlight
+    // (handles the case where darkMode changed and the highlight colour needs updating)
     lastAutoTurnSentenceRef.current = sentence;
     autoTurnToActiveSentence(sentence);
   }, [activeSyncItem, darkMode]);
@@ -524,6 +561,7 @@ export default function Reader({ darkMode, setDarkMode }) {
     }
   };
 
+  // cleans up both the epubjs Rendition and Book instances and clears the viewer DOM node. Called before loading a new book 
   const destroyReader = () => {
     try {
       renditionRef.current?.destroy?.();
@@ -542,6 +580,7 @@ export default function Reader({ darkMode, setDarkMode }) {
     setTotalPages(0);
   };
 
+  // Gutenberg EPUBs can't be fetched directly due to CORS, so we route them through a local proxy server. All other URLs are fetched directly
   const isGutenberg = (url) =>
     typeof url === "string" && url.includes("gutenberg.org");
 
@@ -567,6 +606,7 @@ export default function Reader({ darkMode, setDarkMode }) {
     return null;
   };
 
+  // directly writes styles into the EPUB iframe's document to force the correct theme, font, and visibility
   const forceVisibleContents = () => {
     const contentsArr = renditionRef.current?.getContents?.() || [];
   
@@ -597,6 +637,7 @@ export default function Reader({ darkMode, setDarkMode }) {
         body.style.visibility = "visible";
         body.style.display = "block";
   
+        // reset all child elements
         const all = body.querySelectorAll("*");
         all.forEach((el) => {
           el.style.color = isDark ? "#e8e8f0" : "#122630";
@@ -612,7 +653,7 @@ export default function Reader({ darkMode, setDarkMode }) {
       }
     });
   };
-
+  // registers the theme with epubjs theme system. this runs before display and also whenever font/size/darkMode changes.
   const applyTheme = (renditionInstance) => {
     renditionInstance.themes.default({
       body: {
@@ -636,6 +677,7 @@ export default function Reader({ darkMode, setDarkMode }) {
     renditionInstance.themes.fontSize(`${fontSizeRef.current}%`);
   };
 
+  // some EPUBs have blank or broken pages at the start, thus we iterate through all spine items until we find one that actually renders readable text
   const displayFirstWorkingSpineItem = async (book, rendition) => {
     const spineItems = book?.spine?.items || [];
     log("spine items:", spineItems.length);
@@ -672,6 +714,7 @@ export default function Reader({ darkMode, setDarkMode }) {
     throw lastErr || new Error("Failed to display any readable spine item.");
   };
 
+  // main EPUB loading effect (re-runs when the epub source or darkMode changes): Loads the file, sets up epubjs, registers hooks, counts all pages
   useEffect(() => {
     const el = viewerRef.current;
     if (!el) return;
@@ -699,6 +742,7 @@ export default function Reader({ darkMode, setDarkMode }) {
         if (cancelled) return;
 
         await book.ready;
+        // generate CFI locations in the background — used for percentage-based progress
         book.locations.generate(1000).then(() => {
           setLocationsReady(true);
         });
@@ -713,7 +757,7 @@ export default function Reader({ darkMode, setDarkMode }) {
         });
 
         renditionRef.current = rendition;
-
+        // this hook fires every time epubjs loads a new spine item into its iframe, we use it to inject our theme styles before the content becomes visible.
         rendition.hooks.content.register((contents) => {
           try {
             const doc = contents.document;
@@ -743,7 +787,9 @@ export default function Reader({ darkMode, setDarkMode }) {
         });
 
         applyTheme(rendition);
-
+        
+        // fires every time the reader navigates to a new page position.
+        // we use the spine index + per-spine page counts to calculate a global page number
         rendition.on("relocated", (location) => {
           if (isCountingRef.current) return;
 
@@ -771,6 +817,7 @@ export default function Reader({ darkMode, setDarkMode }) {
             setBookTotalPages(grandTotal);
             setProgress(Math.round((globalPage / grandTotal) * 100));
           } else {
+            // fall back to CFI-based percentage while page counting is still in progress
             const cfi = location?.start?.cfi;
             if (cfi && bookRef.current?.locations?.percentageFromCfi) {
               try {
@@ -782,6 +829,7 @@ export default function Reader({ darkMode, setDarkMode }) {
             }
           }
 
+          // re-appply the sync highlight after a page turn since the DOM was replaced
           if (activeSyncItem?.sentence) {
             setTimeout(() => {
               highlightActiveSentenceInView(activeSyncItem.sentence);
@@ -799,6 +847,7 @@ export default function Reader({ darkMode, setDarkMode }) {
         await displayFirstWorkingSpineItem(book, rendition);
         forceVisibleContents();
 
+        // page counting pass — navigates through every spine item silently to get each item's page count, then returns to wherever the reader was
         const spineItems = book?.spine?.items || [];
         const alreadyCounted = Object.keys(allSpinePageCountsRef.current).length > 0;
 
@@ -819,7 +868,7 @@ export default function Reader({ darkMode, setDarkMode }) {
               if (total) allSpinePageCountsRef.current[i] = total;
             } catch {}
           }
-
+          // return to original position after counting
           if (savedLocation?.start?.cfi) {
             await rendition.display(savedLocation.start.cfi);
           } else {
@@ -838,6 +887,7 @@ export default function Reader({ darkMode, setDarkMode }) {
         setBookTotalPages(grandTotal);
         setTotalPages(grandTotal);
 
+        // diagnostic log
         const contents = rendition.getContents?.() || [];
         console.log(
           "Rendered contents text preview:",
@@ -857,6 +907,7 @@ export default function Reader({ darkMode, setDarkMode }) {
     };
   }, [epubFile, epubUrl, darkMode]);
 
+  // when the spread setting changes (single/double page), update epubjs and re-display the current page so the layout reflows correctly
   useEffect(() => {
     if (!renditionRef.current) return;
     const loc = renditionRef.current.currentLocation?.();
@@ -869,6 +920,7 @@ export default function Reader({ darkMode, setDarkMode }) {
     }
   }, [spread]);
 
+  // re-apply theme styles whenever display settings change. forceVisibleContents is also needed here because epubjs's theme system
   useEffect(() => {
     if (!renditionRef.current) return;
     applyTheme(renditionRef.current);
@@ -895,6 +947,8 @@ export default function Reader({ darkMode, setDarkMode }) {
     }
   };
 
+  // toggles a bookmark at the current CFI position.
+  // if the current page is already bookmarked (matched by CFI or page number), removes it.
   const toggleBookmark = () => {
     if (!currentCfi) return;
     const already = bookmarks.find((b) => b.cfi === currentCfi || b.page === currentPage);
@@ -932,6 +986,7 @@ export default function Reader({ darkMode, setDarkMode }) {
     }
   };
 
+  // navigates to a chapter by its href from the EPUB's table of contents
   const goToToc = async (href) => {
     if (!href) return;
     try {
@@ -983,6 +1038,7 @@ export default function Reader({ darkMode, setDarkMode }) {
 
   return (
     <div style={{ ...styles.page, background: THEME.canvas, color: THEME.ink }}>
+      {/* PERMANENT TOP RIGHT BAR */}
       <div
         style={{
           position: "fixed",
@@ -1026,6 +1082,7 @@ export default function Reader({ darkMode, setDarkMode }) {
               : "0 2px 8px rgba(18, 38, 48, 0.08)",
           }}
         >
+          {/* home icon */}
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
             <path
               d="M3 10.5L12 3L21 10.5"
@@ -1065,7 +1122,8 @@ export default function Reader({ darkMode, setDarkMode }) {
         >
           {user ? user.email : "Guest"}
         </span>
-
+        
+        {/* logout button */}
         <button
           onClick={logout}
           onMouseEnter={() => setIsLogoutHovered(true)}
@@ -1093,6 +1151,7 @@ export default function Reader({ darkMode, setDarkMode }) {
               : "0 2px 8px rgba(18, 38, 48, 0.08)",
           }}
         >
+          {/* logout icon */}
           <svg
             width="16"
             height="16"
@@ -1147,6 +1206,7 @@ export default function Reader({ darkMode, setDarkMode }) {
       </p>
 
       <div style={styles.grid}>
+        {/* The main reader card */}
         <div
           style={{
             ...styles.readerCard,
@@ -1154,6 +1214,7 @@ export default function Reader({ darkMode, setDarkMode }) {
             border: `1px solid ${THEME.border}`,
           }}
         >
+          {/* The toolbar */}
           <div style={{ ...styles.readerTopBar, background: THEME.canvas }}>
             <button
               onClick={saveCurrentBook}
@@ -1166,7 +1227,7 @@ export default function Reader({ darkMode, setDarkMode }) {
             >
               Save to Bookshelf
             </button>
-
+            {/* Page progress bar */}
             <div
               style={{
                 ...styles.progress,
@@ -1211,6 +1272,7 @@ export default function Reader({ darkMode, setDarkMode }) {
               </div>
             </div>
             
+            {/* font picker */}
             <div
               style={{
                 display: "flex",
@@ -1265,6 +1327,7 @@ export default function Reader({ darkMode, setDarkMode }) {
                 );
               })}
             </div>
+            {/* inc/dec font size buttons */}
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <button
                 onClick={() => setFontSize((f) => Math.max(60, f - 10))}
@@ -1309,6 +1372,7 @@ export default function Reader({ darkMode, setDarkMode }) {
                   : "1px solid rgba(18,38,48,0.12)",
               }}
             >
+              {/* single/double page spread toggle */}
               <button
                 onClick={() => setSpread("none")}
                 onMouseEnter={() => setHoverSinglePage(true)}
@@ -1406,6 +1470,7 @@ export default function Reader({ darkMode, setDarkMode }) {
               </button>
             </div>
             
+            {/* bookmark toggle button: filled solid when the current page is already bookmarked */}
             <button
               onClick={toggleBookmark}
               onMouseEnter={() => setHoverBookmark(true)}
@@ -1429,11 +1494,13 @@ export default function Reader({ darkMode, setDarkMode }) {
                   : "none",
               }}
             >
+              {/* bookmark icon */}
               <svg width="16" height="16" viewBox="0 0 24 24" fill={bookmarks.find((b) => b.cfi === currentCfi || b.page === currentPage) ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
               </svg>
             </button>
 
+            {/* local EPUB file upload */}
             <label
               style={{
                 ...styles.fileLabel,
@@ -1455,7 +1522,8 @@ export default function Reader({ darkMode, setDarkMode }) {
               />
             </label>
           </div>
-
+          
+          {/* EPUB viewer area with prev/next page navigation arrows */}
           <div
             style={{
               position: "relative",
@@ -1500,6 +1568,7 @@ export default function Reader({ darkMode, setDarkMode }) {
                   visibility: isCountingPages ? "hidden" : "visible",
                 }}
               />
+              {/* shown over the hidden viewer while page counting is in progress */}
               {isCountingPages && (
                 <div
                   style={{
@@ -1547,9 +1616,11 @@ export default function Reader({ darkMode, setDarkMode }) {
           </div>
         </div>
 
+        {/* Sidebar: audio, sync, bookmarks, chapters */}
         <div style={styles.sidebarCard}>
           <h2 style={styles.h2}>Audio</h2>
 
+          {/* chapter/track selector — only shown for multi-track books */}
           {audioTracks.length > 0 && (
             <select
               value={currentTrackIndex}
@@ -1572,7 +1643,7 @@ export default function Reader({ darkMode, setDarkMode }) {
               ))}
             </select>
           )}
-
+        
           <div
             style={{
               color: COLORS.white,
@@ -1602,6 +1673,7 @@ export default function Reader({ darkMode, setDarkMode }) {
             flexWrap: "wrap",
         }}
         >
+        {/* audio playback speed options */}
         <div
             style={{
             color: COLORS.white,
@@ -1658,6 +1730,7 @@ export default function Reader({ darkMode, setDarkMode }) {
             </div>
           </div>
 
+          {/* sync status: shows the currently highlighted sentence and its timestamp range */}
           <div
             style={{
               marginTop: 12,
@@ -1700,6 +1773,7 @@ export default function Reader({ darkMode, setDarkMode }) {
 
           <hr style={styles.hr} />
 
+          {/* BOOKMARKS */}
           <h2 style={styles.h2}>Bookmarks</h2>
           {bookmarks.length === 0 ? (
             <div style={{ color: "rgba(255,255,255,0.8)", fontSize: 13, marginBottom: 8 }}>
@@ -1763,6 +1837,7 @@ export default function Reader({ darkMode, setDarkMode }) {
 
           <hr style={styles.hr} />
 
+          {/* TABLE OF CONTENTS */}
           <h2 style={styles.h2}>Chapters</h2>
           {toc.length === 0 ? (
             <div style={{ color: "rgba(255,255,255,0.8)", fontSize: 13 }}>
@@ -1794,6 +1869,7 @@ export default function Reader({ darkMode, setDarkMode }) {
   );
 }
 
+// SHARED STYLE OBJECTS ACCROSS THE READER
 const styles = {
   page: {
     fontFamily: FONTS.ui,

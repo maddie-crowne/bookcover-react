@@ -37,6 +37,7 @@ export default function Player({ darkMode, setDarkMode }) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [status, setStatus] = useState("Loading…");
 
+  // hover states for the top bar buttons, playback controls
   const [hoverBookshelf, setHoverBookshelf] = useState(false);
   const [hoverDarkMode, setHoverDarkMode] = useState(false);
   const [isLogoutHovered, setIsLogoutHovered] = useState(false);
@@ -45,7 +46,10 @@ export default function Player({ darkMode, setDarkMode }) {
   const [hoverPlay, setHoverPlay] = useState(false);
   const [hoverSkipBack, setHoverSkipBack] = useState(false);
   const [hoverSkipFwd, setHoverSkipFwd] = useState(false);
+  
   const [playbackRate, setPlaybackRate] = useState(1);
+
+  // audio bookmarks are stored in localStorage (keyed by bookId) so they persist between sessions
   const [audioBookmarks, setAudioBookmarks] = useState([]);
   const [hoverSpeed, setHoverSpeed] = useState(null);
   
@@ -75,12 +79,13 @@ export default function Player({ darkMode, setDarkMode }) {
         scrubberFill: COLORS.frame,
       };
 
-  // Auth
+  // Firebase auth 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => setUser(u));
     return () => unsub();
   }, []);
 
+  // Load audio bookmarks from localStorage when the page opens
   useEffect(() => {
     if (!bookId) return;
     try {
@@ -89,7 +94,9 @@ export default function Player({ darkMode, setDarkMode }) {
     } catch {}
     }, [bookId]);
 
-  // Load book
+  // Fetch book
+  // fetch the book from Firestore and resolve all audio track URLs from Firebase Storage. 
+  // Same 3 scenarios as the Reader: AI-generated tracks, LibriVox multi-chapter tracks, and a single uploaded file
   useEffect(() => {
     if (!user || !bookId) return;
     let cancelled = false;
@@ -117,6 +124,7 @@ export default function Player({ darkMode, setDarkMode }) {
             tracks.push({ ...track, url });
           }
         } else if (data.audio_storage_path) {
+          // single uploaded file is wrapped in a track object so the rest of the UI works on a track-basis
           const url = await getDownloadURL(ref(storage, data.audio_storage_path));
           tracks.push({ title: data.title || "Track 1", url, index: 0 });
         } else if (data.audio_link) {
@@ -141,6 +149,7 @@ export default function Player({ darkMode, setDarkMode }) {
   }, [user, bookId]);
 
   // Audio events
+  // to ensure sync with the actual playback position
   useEffect(() => {
     const a = audioRef.current;
     if (!a) return;
@@ -154,7 +163,7 @@ export default function Player({ darkMode, setDarkMode }) {
         const next = currentTrackIndex + 1;
         setCurrentTrackIndex(next);
         setAudioUrl(audioTracks[next].url);
-        setTimeout(() => audioRef.current?.play(), 100);
+        setTimeout(() => audioRef.current?.play(), 100); // brief delay lets the src update before play() is called
       } else {
         setIsPlaying(false);
       }
@@ -162,7 +171,7 @@ export default function Player({ darkMode, setDarkMode }) {
 
     a.addEventListener("timeupdate", onTime);
     a.addEventListener("durationchange", onDuration);
-    a.addEventListener("loadedmetadata", onDuration);
+    a.addEventListener("loadedmetadata", onDuration); // some browsers only fire one of these, so we listen to both
     a.addEventListener("play", onPlay);
     a.addEventListener("pause", onPause);
     a.addEventListener("ended", onEnded);
@@ -177,16 +186,19 @@ export default function Player({ darkMode, setDarkMode }) {
     };
   }, [audioTracks, currentTrackIndex]);
 
+  // Keep the audio element's playback speed = the speed button option selected
   useEffect(() => {
     if (audioRef.current) audioRef.current.playbackRate = playbackRate;
     }, [playbackRate]);
 
+  // Adds or removes a bookmark at the current playback position
   const toggleAudioBookmark = () => {
     const alreadyExists = audioBookmarks.find(
         (b) => Math.abs(b.time - currentTime) < 2
     );
     let updated;
     if (alreadyExists) {
+        // Uses a 2s tolerance window so you don't end up with near-duplicate bookmarks
         updated = audioBookmarks.filter((b) => Math.abs(b.time - currentTime) >= 2);
     } else {
         updated = [
@@ -211,6 +223,7 @@ export default function Player({ darkMode, setDarkMode }) {
     localStorage.setItem(`audio_bookmarks_${bookId}`, JSON.stringify(updated));
     };
 
+    // jumps to a bookmarked position — if it's on a different track, switches track first + waits 300ms for the src to load before seeking
     const jumpToAudioBookmark = (b) => {
     if (b.trackIndex !== currentTrackIndex) {
         setCurrentTrackIndex(b.trackIndex);
@@ -229,7 +242,7 @@ export default function Player({ darkMode, setDarkMode }) {
     if (isPlaying) a.pause();
     else a.play();
   };
-
+  // clicking audio bar goes to that audio position proportionally
   const seek = (e) => {
     const a = audioRef.current;
     if (!a || !duration) return;
@@ -237,7 +250,7 @@ export default function Player({ darkMode, setDarkMode }) {
     const pct = (e.clientX - rect.left) / rect.width;
     a.currentTime = pct * duration;
   };
-
+  // skips forward or backward by the given number of seconds, clamped to [0, duration]
   const skip = (secs) => {
     const a = audioRef.current;
     if (!a) return;
@@ -281,7 +294,7 @@ export default function Player({ darkMode, setDarkMode }) {
   const title = remoteBook?.title || "Untitled";
   const author = remoteBook?.author || "Unknown";
 
-  // Shared top-bar button style (matches Reader.jsx exactly)
+  // Button base styles
   const topBarBtnBase = {
     border: "none",
     borderRadius: 12,
@@ -306,10 +319,10 @@ export default function Player({ darkMode, setDarkMode }) {
       flexDirection: "column",
     }}>
 
-      
+      {/* hidden audio element — controls are rendered manually below */}
       <audio ref={audioRef} src={audioUrl || undefined} />
 
-      
+      {/* PERMANENT TOP RIGHT BAR */}
       <div style={{
         position: "fixed",
         top: 16,
@@ -400,7 +413,7 @@ export default function Player({ darkMode, setDarkMode }) {
         </button>
       </div>
 
-      {/* player */}
+      {/* The main PLAYER card */}
       <div style={{
         flex: 1,
         display: "flex",
@@ -492,7 +505,7 @@ export default function Player({ darkMode, setDarkMode }) {
             </div>
           </div>
 
-          {/* scrubber */}
+          {/* Progress bar */}
           <div style={{ width: "100%", marginBottom: 8 }}>
             <div
               onClick={seek}
@@ -523,12 +536,13 @@ export default function Player({ darkMode, setDarkMode }) {
               color: THEME.mutedInk,
               fontFamily: FONTS.ui,
             }}>
+              {/* current time played on the elft, time remaining on the right */}
               <span>{fmt(currentTime)}</span>
               <span>−{fmt(duration - currentTime)}</span>
             </div>
           </div>
 
-            {/* Bookmark button */}
+            {/* Bookmark button: fills solid within 2s of an existing bookmark if one was present */}
             <div style={{ width: "100%", display: "flex", justifyContent: "flex-end", marginBottom: 4 }}>
             <button
                 onClick={toggleAudioBookmark}
@@ -559,6 +573,7 @@ export default function Player({ darkMode, setDarkMode }) {
                     : "none",
                 }}
             >
+                {/* Bookmark icon: filled when selected */}
                 <svg width="14" height="14" viewBox="0 0 24 24"
                 fill={audioBookmarks.find((b) => Math.abs(b.time - currentTime) < 2) ? "currentColor" : "none"}
                 stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -568,7 +583,7 @@ export default function Player({ darkMode, setDarkMode }) {
             </button>
             </div>
 
-          {/* controls */}
+          {/* playback speed controls */}
           <div style={{
             display: "flex",
             alignItems: "center",
@@ -605,7 +620,7 @@ export default function Player({ darkMode, setDarkMode }) {
               </svg>
             </button>
 
-            {/* Skip back 15s */}
+            {/* Go back 15s button */}
             <button
               onClick={() => skip(-15)}
               onMouseEnter={() => setHoverSkipBack(true)}
@@ -632,7 +647,7 @@ export default function Player({ darkMode, setDarkMode }) {
               </svg>
             </button>
 
-            {/* Play / Pause */}
+            {/* Play / Pause button */}
             <button
               onClick={togglePlay}
               onMouseEnter={() => setHoverPlay(true)}
@@ -667,7 +682,7 @@ export default function Player({ darkMode, setDarkMode }) {
               )}
             </button>
 
-            {/* Skip forward 15s */}
+            {/* Go forward 15s button */}
             <button
               onClick={() => skip(15)}
               onMouseEnter={() => setHoverSkipFwd(true)}
@@ -722,7 +737,7 @@ export default function Player({ darkMode, setDarkMode }) {
             </button>
           </div>
 
-          {/* Playback speed */}
+          {/* audio playback speed options */}
           <div
             style={{
               display: "flex",
@@ -797,7 +812,7 @@ export default function Player({ darkMode, setDarkMode }) {
               );
             })}
           </div>
-            {/* Audio Bookmarks */}
+            {/* Audio bookmarks list (only rendered when bookmarks exist)  */}
             {audioBookmarks.length > 0 && (
             <div style={{
                 width: "100%",
@@ -876,7 +891,7 @@ export default function Player({ darkMode, setDarkMode }) {
             </div>
             )}
 
-            {/* Track list (if multiple) */}
+          {/* Track list (if multiple tracks exist for this book) */}
           {audioTracks.length > 1 && (
             <div style={{
               width: "100%",
@@ -906,7 +921,7 @@ export default function Player({ darkMode, setDarkMode }) {
                     border: "none",
                     background: idx === currentTrackIndex
                       ? darkMode ? "rgba(74,158,186,0.18)" : "rgba(26,75,93,0.08)"
-                      : "transparent",
+                      : "transparent", // subtle background tint on the active track
                     cursor: "pointer",
                     textAlign: "left",
                     transition: "background 0.15s ease",
@@ -925,6 +940,7 @@ export default function Player({ darkMode, setDarkMode }) {
                     justifyContent: "center",
                     flexShrink: 0,
                   }}>
+                    {/* circle indicator: pause icon when track is playing, track number otherwise */}
                     {idx === currentTrackIndex && isPlaying ? (
                       <svg width="10" height="10" viewBox="0 0 24 24" fill={darkMode ? COLORS.ink : COLORS.white}>
                         <rect x="6" y="4" width="4" height="16" rx="1"/>
