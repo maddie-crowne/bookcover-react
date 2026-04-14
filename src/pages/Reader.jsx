@@ -83,9 +83,12 @@ export default function Reader({ darkMode, setDarkMode }) {
   const [hoverSinglePage, setHoverSinglePage] = useState(false);
   const [hoverDoublePage, setHoverDoublePage] = useState(false);
   const [isLogoutHovered, setIsLogoutHovered] = useState(false);
-  //const [locationsReady, setLocationsReady] = useState(false);
+  const [locationsReady, setLocationsReady] = useState(false);
   const [hoveredFont, setHoveredFont] = useState(null);
   const [hoverBookmark, setHoverBookmark] = useState(false);
+  const [trackDurations, setTrackDurations] = useState([]);
+const [globalDuration, setGlobalDuration] = useState(0);
+const [globalCurrentTime, setGlobalCurrentTime] = useState(0);
 
   const [isCountingPages, setIsCountingPages] = useState(false);
 
@@ -130,6 +133,18 @@ export default function Reader({ darkMode, setDarkMode }) {
     const r = s % 60;
     return `${m}:${String(r).padStart(2, "0")}`;
   }, [currentTime]);
+  const formatClock = (secs) => {
+    const total = Math.floor(secs || 0);
+    const h = Math.floor(total / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    const s = total % 60;
+  
+    if (h > 0) {
+      return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+    }
+  
+    return `${m}:${String(s).padStart(2, "0")}`;
+  };
 
   // keep the audio element's playbackRate in sync with the speed buttons
   useEffect(() => {
@@ -235,6 +250,45 @@ export default function Reader({ darkMode, setDarkMode }) {
     };
   }, [user, bookId]);
 
+  useEffect(() => {
+    if (!audioTracks.length) {
+      setTrackDurations([]);
+      setGlobalDuration(0);
+      return;
+    }
+  
+    let cancelled = false;
+  
+    const loadDurations = async () => {
+      try {
+        const durations = await Promise.all(
+          audioTracks.map(
+            (track) =>
+              new Promise((resolve) => {
+                const el = document.createElement("audio");
+                el.preload = "metadata";
+                el.src = track.url;
+                el.onloadedmetadata = () => resolve(el.duration || 0);
+                el.onerror = () => resolve(0);
+              })
+          )
+        );
+  
+        if (cancelled) return;
+  
+        setTrackDurations(durations);
+        setGlobalDuration(durations.reduce((sum, d) => sum + d, 0));
+      } catch (e) {
+        console.error("[Reader] failed to load track durations:", e);
+      }
+    };
+  
+    loadDurations();
+  
+    return () => {
+      cancelled = true;
+    };
+  }, [audioTracks]);
   // when a user uploads an audio file manually, create a blob URL for the audio, revoke it on cleanup to avoid memory leaks.
   useEffect(() => {
     if (!audioFile) return;
@@ -268,6 +322,13 @@ export default function Reader({ darkMode, setDarkMode }) {
     };
   }, [audioTracks, currentTrackIndex]);
 
+  useEffect(() => {
+    const offset = trackDurations
+      .slice(0, currentTrackIndex)
+      .reduce((sum, d) => sum + d, 0);
+  
+    setGlobalCurrentTime(offset + currentTime);
+  }, [currentTime, currentTrackIndex, trackDurations]);
   // when the next track's audio is ready to play, autoplay it if the previous track ended naturally
   useEffect(() => {
     const a = audioRef.current;
@@ -1621,6 +1682,7 @@ export default function Reader({ darkMode, setDarkMode }) {
           <h2 style={styles.h2}>Audio</h2>
 
           {/* chapter/track selector — only shown for multi-track books */}
+          {/*
           {audioTracks.length > 0 && (
             <select
               value={currentTrackIndex}
@@ -1643,7 +1705,7 @@ export default function Reader({ darkMode, setDarkMode }) {
               ))}
             </select>
           )}
-        
+        */}
           <div
             style={{
               color: COLORS.white,
@@ -1712,24 +1774,44 @@ export default function Reader({ darkMode, setDarkMode }) {
         })}
         </div>
         <audio ref={audioRef} controls src={audioUrl || undefined} style={{ width: "100%" }} />
-          <div
+            <div
             style={{
-              marginTop: 12,
-              color: COLORS.white,
-              background: "rgba(255,255,255,0.08)",
-              border: "1px solid rgba(255,255,255,0.14)",
-              borderRadius: 14,
-              padding: 12,
+                marginTop: 12,
+                color: COLORS.white,
+                background: "rgba(255,255,255,0.08)",
+                border: "1px solid rgba(255,255,255,0.14)",
+                borderRadius: 14,
+                padding: 12,
             }}
-          >
+            >
             <div>
-              <b>Current time:</b> {mmss}
+                <b>Current time:</b> {formatClock(globalCurrentTime)} / {formatClock(globalDuration)}
             </div>
-            <div style={{ marginTop: 6 }}>
-            <b>Speed:</b> {playbackRate}×
-            </div>
-          </div>
 
+            <div
+                style={{
+                marginTop: 8,
+                height: 8,
+                borderRadius: 999,
+                background: "rgba(255,255,255,0.14)",
+                overflow: "hidden",
+                }}
+            >
+                <div
+                style={{
+                    height: "100%",
+                    width: globalDuration > 0 ? `${(globalCurrentTime / globalDuration) * 100}%` : "0%",
+                    background: COLORS.status,
+                    borderRadius: 999,
+                    transition: "width 0.2s ease",
+                }}
+                />
+            </div>
+
+            <div style={{ marginTop: 8 }}>
+                <b>Speed:</b> {playbackRate}×
+            </div>
+            </div>
           {/* sync status: shows the currently highlighted sentence and its timestamp range */}
           <div
             style={{

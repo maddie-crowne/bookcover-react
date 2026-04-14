@@ -13,7 +13,7 @@ import { ref, uploadBytes } from "firebase/storage";
 import Modal from "../components/Modal";
 import { useNavigate } from "react-router-dom";
 
-const SCRAPER_BASE_URL = "http://localhost:5050";
+const SCRAPER_BASE_URL = "http://localhost:5002";
 const AUDIO_SERVICE_BASE_URL = "http://127.0.0.1:5002";
 
 const COLORS = {
@@ -71,7 +71,10 @@ const epubFromGutendex = (formats) => formats?.["application/epub+zip"] || "";
 const getVoiceLabel = (value) =>
     AUDIO_VOICES.find((v) => v.value === value)?.label || value;
 
+const getBookDocRef = (uid, bookId) => doc(db, "Users", uid, "Books", bookId);
+
 export default function Dashboard({ user, darkMode, setDarkMode }) {
+  const navigate = useNavigate();
   const [gridSize, setGridSize] = useState("medium");  // deafult layout choice: "small" "medium" "large"
   const [sortBy, setSortBy] = useState("recent");
   const [books, setBooks] = useState([]); // live-synced array of the user's books from Firestore
@@ -162,6 +165,15 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
   
     return () => unsub();
   }, [booksCol]);
+
+  const resetUploadForm = () => {
+    setUpTitle("");
+    setUpAuthor("");
+    setUpFile(null);
+    setUpAudioFile(null);
+    setUpStatus("");
+    setSelectedVoice("en-US-GuyNeural");
+  };
 
   const logout = async () => {
     const confirmed = window.confirm("Are you sure you want to log out?");
@@ -398,13 +410,17 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
       console.log("prepare-librivox-audio:", data);
   
       if (!res.ok) {
-        alert(data.error || "Failed to prepare LibriVox audio.");
+        throw new Error(data.error || "Failed to prepare LibriVox audio.");
       }
+
+      return data;
     } catch (e) {
       console.error("prepareLibrivoxAudio fetch error:", e);
       alert("Could not reach LibriVox audio processor: " + e.message);
+      throw e;
     }
   };
+
   // GENERATE AUDIO
   const generateAudiobook = async (bookId) => {
     try {
@@ -497,18 +513,28 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
 
   const addBoth = async (book, setRowStatus) => {
     try {
+      const bookId = generateBookId(book.title);
+  
       setRowStatus("Adding EPUB…");
-      if (book.epub_link) await addEpub(book);
-
+      if (book.epub_link) {
+        await addEpub(book);
+      }
+  
       setRowStatus("Searching audio…");
       const audio = await findAudio(book.title);
-
-      if (audio.status === "success" && audio.audio_url) {
-        await addAudio(book, audio.audio_url);
-        setRowStatus("Done ✓ (EPUB + Audio)");
-      } else {
+  
+      if (!(audio.status === "success" && audio.audio_url)) {
         setRowStatus("Done ✓ (EPUB only, no audio found)");
+        return;
       }
+  
+      setRowStatus("Saving audio link…");
+      await addAudio(book, audio.audio_url);
+  
+      setRowStatus("Preparing LibriVox audio…");
+      await prepareLibrivoxAudio(bookId);
+  
+      setRowStatus("Done ✓ (EPUB + Audio)");
     } catch (e) {
       setRowStatus("Failed: " + e.message);
     }
@@ -803,7 +829,7 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
                     onAddEpub={() => addEpub(r)}
                     onFindAudio={() => findAudio(r.title)}
                     onAddAudio={(audioUrl) => addAudio(r, audioUrl)}
-                    onAddBoth={(setRowStatus) => addBoth(r, setRowStatus)}
+                    onAddBoth={(setRowStatus, audioUrl) => addBoth(r, setRowStatus, audioUrl)}
                   />
                 ))}
               </div>
@@ -943,14 +969,16 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
                 onMouseLeave={() => setIsGenerateHovered(false)}
                 onClick={async () => {
                     try {
-                    await updateBookVoice(audioBook.id, selectedVoiceLocal);
-                    await generateAudiobook(audioBook.id);
-                    closeAudioModal();
+                      const bookId = audioBook.id;
+                      const voice = selectedVoiceLocal;
+                      closeAudioModal();
+                      await updateBookVoice(bookId, voice);
+                      await generateAudiobook(bookId);
                     } catch (e) {
-                    console.error("Generate audiobook failed:", e);
-                    alert("Failed to generate audiobook: " + e.message);
+                      console.error("Generate audiobook failed:", e);
+                      alert("Failed to generate audiobook: " + e.message);
                     }
-                }}
+                  }}
                 >
                 Generate Audiobook
                 </button>
@@ -1332,11 +1360,14 @@ function SearchTab({
 }*/
 
 // Generic lift-on-hover button — keeps hover logic out of call sites
-function HoverButton({ onClick, children, baseStyle, hoverShadow }) {
+function HoverButton({ onClick, children, baseStyle, style, hoverShadow }) {
   const [isHovered, setIsHovered] = useState(false);
-  const getHoverLiftStyle = (isHovered) => ({
-    transform: isHovered ? "translateY(-4px)" : "translateY(0)",
-    transition: "transform 0.2s ease"
+  const getHoverLiftStyle = (hovered) => ({
+    transform: hovered ? "translateY(-4px)" : "translateY(0)",
+    transition: "all 0.2s ease",
+    boxShadow: hovered
+      ? hoverShadow || "0 8px 20px rgba(26, 75, 93, 0.4)"
+      : (style?.boxShadow || baseStyle?.boxShadow),
   });
 
   return (
@@ -1346,6 +1377,7 @@ function HoverButton({ onClick, children, baseStyle, hoverShadow }) {
       onMouseLeave={() => setIsHovered(false)}
       style={{
         ...baseStyle,
+        ...style,
         ...getHoverLiftStyle(isHovered, hoverShadow),
       }}
     >
@@ -1856,7 +1888,7 @@ function SearchResultCard({ book, onAddEpub, onFindAudio, onAddAudio, onAddBoth 
   const findAudioClick = async () => {
     setRowStatus("Checking LibriVox…");
     try {
-      const audio = await onFindAudio();
+      const audio = await onFindAudio(audioLink);
       if (audio.status === "success" && audio.audio_url) {
         setAudioLink(audio.audio_url);
         setRowStatus("Audio found ✓");
@@ -1876,7 +1908,7 @@ function SearchResultCard({ book, onAddEpub, onFindAudio, onAddAudio, onAddBoth 
   };
 
   const addBothClick = async () => {
-    await onAddBoth(setRowStatus);
+    await onAddBoth(setRowStatus, audioLink);
   };
 
   return (
@@ -1910,6 +1942,8 @@ function SearchResultCard({ book, onAddEpub, onFindAudio, onAddAudio, onAddBoth 
       <div style={{ flex: 1, minWidth: 0 }}>
         <h4 style={{ margin: "0 0 6px", fontSize: 14, lineHeight: 1.2 }}>{book.title}</h4>
         <p style={{ margin: "0 0 10px", fontSize: 12, color: "#6b7280" }}>By {book.author}</p>
+
+        
 
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {hasEpub && (

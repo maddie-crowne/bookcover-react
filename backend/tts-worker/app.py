@@ -232,7 +232,6 @@ def generate_audio():
             "trace": traceback.format_exc()
         }), 500
 
-
 @app.post("/prepare-librivox-audio")
 def prepare_librivox_audio():
     data = request.get_json()
@@ -329,6 +328,53 @@ def prepare_librivox_audio():
             "trace": traceback.format_exc()
         }), 500
 
+@app.get("/scrape-audio")
+def scrape_audio():
+    title = request.args.get("title", "").strip()
+    if not title:
+        return jsonify({"status": "error", "error": "Missing title"}), 400
 
+    try:
+        search_url = "https://librivox.org/api/feed/audiobooks"
+        params = {
+            "format": "json",
+            "title": title,
+        }
+
+        r = requests.get(search_url, params=params, timeout=30)
+        r.raise_for_status()
+        data = r.json()
+
+        books = data.get("books", [])
+        if not books:
+            return jsonify({"status": "not_found"})
+
+        book = books[0]
+
+        candidates = [
+            book.get("url_zip_file"),
+            book.get("url_librivox"),
+            book.get("url_iarchive"),
+        ]
+
+        audio_url = None
+        for candidate in candidates:
+            if candidate and candidate.lower().endswith(".zip"):
+                audio_url = candidate
+                break
+
+        if not audio_url:
+            return jsonify({"status": "not_found"})
+
+        return jsonify({
+            "status": "success",
+            "audio_url": audio_url
+        })
+
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "error": str(e)
+        }), 500
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5002)
