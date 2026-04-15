@@ -99,7 +99,8 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
   const [selectedVoice, setSelectedVoice] = useState("en-US-GuyNeural");
   const [hoveredSize, setHoveredSize] = useState(null);   // tracks which grid-size pill button the mouse is hovering 
 
-  
+  const [editPendingLibrivoxLink, setEditPendingLibrivoxLink] = useState("");
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
   const THEME = darkMode ? {
     canvas: "#1a1a2e",
     ink: "#e8e8f0",
@@ -129,7 +130,11 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
   const [editEpubFile, setEditEpubFile] = useState(null); // new EPUB to replace the existing one, or null if unchanged
   const [editAudioFile, setEditAudioFile] = useState(null); // new audio file, or null if unchanged
   const [editStatus, setEditStatus] = useState("");
-  
+  const [editAudioMode, setEditAudioMode] = useState("upload"); // "upload" or "librivox"
+  const [editAudioSearch, setEditAudioSearch] = useState("");
+  const [editAudioSearchStatus, setEditAudioSearchStatus] = useState("");
+  const [editFoundAudioLink, setEditFoundAudioLink] = useState("");
+    
   // "Audio" states: used when the user picks an AI voice to generate audio for an EPUB 
   const [audioOpen, setAudioOpen] = useState(false);
   const [audioBook, setAudioBook] = useState(null);
@@ -145,16 +150,47 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
   // derives a transformed list from 'books'. This block only re-runs if a book is added/removed or sortBy is modified
   const sortedBooks = useMemo(() => {
     const list = [...books];
-    if (sortBy === "title-asc") list.sort((a, b) => (a.title || "").localeCompare(b.title || ""));
-    if (sortBy === "title-desc") list.sort((a, b) => (b.title || "").localeCompare(a.title || ""));
-    if (sortBy === "author-asc") list.sort((a, b) => (a.author || "").localeCompare(b.author || ""));
-    if (sortBy === "author-desc") list.sort((a, b) => (b.author || "").localeCompare(a.author || ""));
-    if (sortBy === "recent") list.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-    if (sortBy === "epub") return list.filter(b => !!b.epub_link || !!b.epub_storage_path);
-    if (sortBy === "audio") return list.filter(b => !!b.audio_link || !!b.audio_storage_path);
+
+    if (sortBy === "title-asc") {
+      list.sort((a, b) => (a.title || "").localeCompare(b.title || ""));
+      return list;
+    }
+
+    if (sortBy === "title-desc") {
+      list.sort((a, b) => (b.title || "").localeCompare(a.title || ""));
+      return list;
+    }
+
+    if (sortBy === "author-asc") {
+      list.sort((a, b) => (a.author || "").localeCompare(b.author || ""));
+      return list;
+    }
+
+    if (sortBy === "author-desc") {
+      list.sort((a, b) => (b.author || "").localeCompare(a.author || ""));
+      return list;
+    }
+
+    if (sortBy === "recent") {
+      list.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+      return list;
+    }
+
+    if (sortBy === "epub") {
+      return list.filter((b) => !!b.epub_link || !!b.epub_storage_path);
+    }
+
+    if (sortBy === "audio") {
+      return list.filter(
+        (b) =>
+          !!b.audio_link ||
+          !!b.audio_storage_path ||
+          (Array.isArray(b.librivox_audio_tracks) && b.librivox_audio_tracks.length > 0)
+      );
+    }
+
     return list;
   }, [books, sortBy]);
-
   // opens a real-time Firestore listener that keeps the books array in sync with the DB.
   useEffect(() => {
     const unsub = onSnapshot(booksCol, (snap) => {
@@ -195,8 +231,16 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
     setEditEpubFile(null);
     setEditAudioFile(null);
     setEditStatus("");
+
+    setEditAudioMode("upload");
+    setEditAudioSearch(book.title || "");
+    setEditAudioSearchStatus("");
+    setEditFoundAudioLink("");
+    setEditPendingLibrivoxLink("");
+
     setEditOpen(true);
   };
+
   const closeEditModal = () => {
     setEditOpen(false);
     setEditBook(null);
@@ -205,10 +249,18 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
     setEditEpubFile(null);
     setEditAudioFile(null);
     setEditStatus("");
+
+    setEditAudioMode("upload");
+    setEditAudioSearch("");
+    setEditAudioSearchStatus("");
+    setEditFoundAudioLink("");
+    setEditPendingLibrivoxLink("");
+    setIsSavingEdit(false);
   };
   const saveEditedBook = async () => {
-    if (!editBook) return;
+    if (!editBook || isSavingEdit) return;
 
+    setIsSavingEdit(true);
     setEditStatus("");
 
     try {
@@ -217,7 +269,7 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
         author: editAuthor.trim() || "Unknown",
         updatedAt: serverTimestamp(),
       };
-      // Upload a new EPUB
+
       if (editEpubFile) {
         setEditStatus("Uploading new EPUB...");
         const epubPath = `epubs/${user.uid}/${editBook.id}.epub`;
@@ -226,19 +278,60 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
         updates.epub_source = "upload";
       }
 
-      if (editAudioFile) {
+      if (editAudioMode === "upload" && editAudioFile) {
         setEditStatus("Uploading new audio...");
         const audioPath = `audio/${user.uid}/${editBook.id}/${editAudioFile.name}`;
         await uploadBytes(ref(storage, audioPath), editAudioFile);
+
         updates.audio_storage_path = audioPath;
+        updates.audio_link = null;
         updates.audio_source = "upload";
+        updates.librivox_audio_tracks = [];
+        
+        updates.generated_audio_tracks = [];
+        updates.generated_audio_status = "idle";
+        updates.generated_audio_progress = 0;
+        updates.generated_audio_current = 0;
+        updates.generated_audio_total = 0;
+        updates.generated_audio_error = null;
+
+        updates.librivox_audio_status = "idle";
+        updates.librivox_audio_progress = 0;
+        updates.librivox_audio_current = 0;
+        updates.librivox_audio_total = 0;
+        updates.librivox_audio_error = null;
       }
-      // merge: true means we only overwrite the fields in updates dictionary
+
+      if (editAudioMode === "librivox" && editPendingLibrivoxLink) {
+        setEditStatus("Saving LibriVox audio...");
+        updates.audio_link = editPendingLibrivoxLink;
+        updates.audio_storage_path = null;
+        updates.audio_source = "librivox";
+
+        
+        updates.generated_audio_tracks = [];
+        updates.generated_audio_status = "idle";
+        updates.generated_audio_progress = 0;
+        updates.generated_audio_current = 0;
+        updates.generated_audio_total = 0;
+        updates.generated_audio_error = null;
+      }
+
       setEditStatus("Saving changes...");
       await setDoc(getBookDocRef(user.uid, editBook.id), updates, { merge: true });
+
+      if (editAudioMode === "librivox" && editPendingLibrivoxLink) {
+        setEditStatus("Starting LibriVox audio prep...");
+        prepareLibrivoxAudio(editBook.id).catch((e) => {
+          console.error("LibriVox prep failed:", e);
+        });
+      }
+
       closeEditModal();
     } catch (e) {
       setEditStatus("Edit failed: " + e.message);
+    } finally {
+      setIsSavingEdit(false);
     }
   };
 
@@ -492,6 +585,29 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
       `${SCRAPER_BASE_URL}/scrape-audio?title=${encodeURIComponent(title)}`
     );
     return await res.json();
+  };
+  const searchEditLibrivox = async () => {
+    if (!editAudioSearch.trim()) {
+      setEditAudioSearchStatus("Enter a title to search.");
+      return;
+    }
+
+    try {
+      setEditAudioSearchStatus("Searching LibriVox...");
+      setEditFoundAudioLink("");
+      setEditPendingLibrivoxLink("");
+
+      const audio = await findAudio(editAudioSearch.trim());
+
+      if (audio.status === "success" && audio.audio_url) {
+        setEditFoundAudioLink(audio.audio_url);
+        setEditAudioSearchStatus("Audio found ✓");
+      } else {
+        setEditAudioSearchStatus("No audio found.");
+      }
+    } catch (e) {
+      setEditAudioSearchStatus("Audio search failed: " + e.message);
+    }
   };
 
   const addAudio = async (book, audioUrl) => {
@@ -869,13 +985,90 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
                 />
             </Field>
 
-            <Field label="Audio file">
-              <input
-                style={inputStyle}
-                type="file"
-                accept=".mp3,.zip,.m4b,.m4a,.ogg,.wav"
-                onChange={(e) => setEditAudioFile(e.target.files?.[0] || null)}
-              />
+            <Field label="Audio source">
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+                <TabButton active={editAudioMode === "upload"} onClick={() => setEditAudioMode("upload")}>
+                  Upload file
+                </TabButton>
+                <TabButton active={editAudioMode === "librivox"} onClick={() => setEditAudioMode("librivox")}>
+                  Search LibriVox
+                </TabButton>
+              </div>
+
+              {editAudioMode === "upload" ? (
+                <input
+                  style={inputStyle}
+                  type="file"
+                  accept=".mp3,.zip,.m4b,.m4a,.ogg,.wav"
+                  onChange={(e) => setEditAudioFile(e.target.files?.[0] || null)}
+                />
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  <input
+                    style={inputStyle}
+                    value={editAudioSearch}
+                    onChange={(e) => setEditAudioSearch(e.target.value)}
+                    placeholder="Search LibriVox by title..."
+                  />
+
+                  <button
+                    onClick={searchEditLibrivox}
+                    style={{
+                      ...btnWide,
+                      marginTop: 0,
+                      background: COLORS.frame,
+                      color: COLORS.white,
+                      border: "none",
+                    }}
+                  >
+                    Find Audio
+                  </button>
+
+                  {editAudioSearchStatus && (
+                    <div style={{ fontSize: 13, color: COLORS.mutedInk }}>
+                      {editAudioSearchStatus}
+                    </div>
+                  )}
+
+                  {editFoundAudioLink && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                        <a
+                          href={editFoundAudioLink}
+                          target="_blank"
+                          rel="noreferrer"
+                          style={miniPreview}
+                        >
+                          Preview Audio
+                        </a>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditPendingLibrivoxLink(editFoundAudioLink);
+                            setEditAudioSearchStatus(
+                              editBook?.audio_link || editBook?.audio_storage_path
+                                ? "Replacement audio selected ✓"
+                                : "Audio selected ✓"
+                            );
+                          }}
+                          style={miniBtn(COLORS.frame, "white")}
+                        >
+                          {editBook?.audio_link || editBook?.audio_storage_path
+                            ? "Replace Audio"
+                            : "Add Audio"}
+                        </button>
+                      </div>
+
+                      {editPendingLibrivoxLink && (
+                        <div style={{ fontSize: 13, color: "#16a34a" }}>
+                          LibriVox audio selected. Press Save Changes to attach it to this book ✓
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </Field>
 
             <HoverButton 
@@ -968,17 +1161,48 @@ export default function Dashboard({ user, darkMode, setDarkMode }) {
                 onMouseEnter={() => setIsGenerateHovered(true)}
                 onMouseLeave={() => setIsGenerateHovered(false)}
                 onClick={async () => {
-                    try {
-                      const bookId = audioBook.id;
-                      const voice = selectedVoiceLocal;
-                      closeAudioModal();
-                      await updateBookVoice(bookId, voice);
-                      await generateAudiobook(bookId);
-                    } catch (e) {
-                      console.error("Generate audiobook failed:", e);
-                      alert("Failed to generate audiobook: " + e.message);
-                    }
-                  }}
+                  try {
+                    const bookId = audioBook.id;
+                    const voice = selectedVoiceLocal;
+
+                    closeAudioModal();
+
+                    // 🔥 CLEAR LIBRIVOX BEFORE GENERATING
+                    await setDoc(
+                      doc(db, "Users", user.uid, "Books", bookId),
+                      {
+                        generated_audio_voice: voice,
+
+                        // remove librivox
+                        audio_link: null,
+                        audio_storage_path: null,
+                        audio_source: "generated",
+                        librivox_audio_tracks: [],
+                        librivox_audio_status: "idle",
+                        librivox_audio_progress: 0,
+                        librivox_audio_current: 0,
+                        librivox_audio_total: 0,
+                        librivox_audio_error: null,
+
+                        // reset generated audio
+                        generated_audio_tracks: [],
+                        generated_audio_status: "running",
+                        generated_audio_progress: 0,
+                        generated_audio_current: 0,
+                        generated_audio_total: 0,
+                        generated_audio_error: null,
+
+                        updatedAt: serverTimestamp(),
+                      },
+                      { merge: true }
+                    );
+
+                    await generateAudiobook(bookId);
+                  } catch (e) {
+                    console.error("Generate audiobook failed:", e);
+                    alert("Failed to generate audiobook: " + e.message);
+                  }
+                }}
                 >
                 Generate Audiobook
                 </button>
@@ -1485,7 +1709,10 @@ function BookTile({
     const mutedColor = darkMode ? "rgba(232,232,240,0.65)" : "#6b7280";
   
     const hasEpub = !!book.epub_link || !!book.epub_storage_path;
-    const hasAudio = !!book.audio_link || !!book.audio_storage_path;
+    const hasAudio =
+      !!book.audio_link ||
+      !!book.audio_storage_path ||
+      (Array.isArray(book.librivox_audio_tracks) && book.librivox_audio_tracks.length > 0);
     const hasGeneratedAudio =
       Array.isArray(book.generated_audio_tracks) &&
       book.generated_audio_tracks.length > 0;
@@ -1493,6 +1720,16 @@ function BookTile({
     const isGenerating = book.generated_audio_status === "running";
     const isReady = book.generated_audio_status === "ready" && hasGeneratedAudio;
     const isError = book.generated_audio_status === "error";
+    const isLibrivoxGenerating = book.librivox_audio_status === "running";
+    const isLibrivoxReady =
+      book.librivox_audio_status === "ready" &&
+      Array.isArray(book.librivox_audio_tracks) &&
+      book.librivox_audio_tracks.length > 0;
+    const isLibrivoxError = book.librivox_audio_status === "error";
+
+    const librivoxProgress = book.librivox_audio_progress || 0;
+    const librivoxCurrent = book.librivox_audio_current || 0;
+    const librivoxTotal = book.librivox_audio_total || 0;
   
     const generationProgress = book.generated_audio_progress || 0;
     const generationCurrent = book.generated_audio_current || 0;
@@ -1867,6 +2104,43 @@ function BookTile({
               Audio generation failed
             </div>
           )}
+          {isLibrivoxGenerating && (
+            <div style={{ marginTop: 8 }}>
+              <div style={{ fontSize: 11, color: mutedColor, marginBottom: 4 }}>
+                Preparing LibriVox audio… {librivoxCurrent}/{librivoxTotal}
+              </div>
+              <div
+                style={{
+                  width: "100%",
+                  height: 8,
+                  background: darkMode ? "rgba(255,255,255,0.12)" : "#e5e7eb",
+                  borderRadius: 999,
+                  overflow: "hidden",
+                }}
+              >
+                <div
+                  style={{
+                    width: `${librivoxProgress}%`,
+                    height: "100%",
+                    background: "#f59e0b",
+                    transition: "width 0.3s ease",
+                  }}
+      />
+    </div>
+  </div>
+)}
+
+{isLibrivoxReady && (
+  <div style={{ marginTop: 8, fontSize: 11, color: "#16a34a", fontWeight: 700 }}>
+    LibriVox audio ready ✓
+  </div>
+)}
+
+{isLibrivoxError && (
+  <div style={{ marginTop: 8, fontSize: 11, color: "#b91c1c" }}>
+    LibriVox audio preparation failed
+  </div>
+)}
         </div>
       </div>
     );
