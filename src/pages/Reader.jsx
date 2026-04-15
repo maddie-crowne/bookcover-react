@@ -71,7 +71,6 @@ export default function Reader({ darkMode, setDarkMode }) {
   const [locationsReady, setLocationsReady] = useState(false);
   const [isCountingPages, setIsCountingPages] = useState(false);
 
-  // Sync state
   const [syncFile, setSyncFile] = useState(null);
   const [syncData, setSyncData] = useState([]);
   const [activeSyncIndex, setActiveSyncIndex] = useState(-1);
@@ -305,11 +304,79 @@ export default function Reader({ darkMode, setDarkMode }) {
 
   const normalizeForMatch = (text) =>
     (text || "")
+      .replace(/\u00A0/g, " ")
       .replace(/\s+/g, " ")
       .replace(/[“”]/g, '"')
       .replace(/[‘’]/g, "'")
+      .replace(/[—–]/g, "-")
       .trim()
       .toLowerCase();
+
+  const stripOuterQuotes = (text) => {
+    if (!text) return "";
+    return text
+      .trim()
+      .replace(/^["'“‘]+/, "")
+      .replace(/["'”’]+$/, "")
+      .trim();
+  };
+
+  const expandCandidateTexts = (syncItem) => {
+    const raw = [
+      syncItem?.highlight_text,
+      ...(Array.isArray(syncItem?.highlight_parts) ? syncItem.highlight_parts : []),
+      syncItem?.sentence,
+    ].filter(Boolean);
+
+    const out = new Set();
+
+    raw.forEach((part) => {
+      const norm = normalizeForMatch(part);
+      if (!norm) return;
+      out.add(norm);
+
+      const stripped = normalizeForMatch(stripOuterQuotes(part));
+      if (stripped) out.add(stripped);
+
+      const noPunct = norm.replace(/[.,!?;:]+$/g, "").trim();
+      if (noPunct) out.add(noPunct);
+    });
+
+    return Array.from(out).filter((t) => t.length >= 6);
+  };
+
+  const scoreBlockMatch = (target, text) => {
+    if (!target || !text) return -999;
+
+    if (text === target) return 200;
+
+    if (text.includes(target)) {
+      const extra = Math.max(0, text.length - target.length);
+      return 170 - Math.min(extra * 0.08, 45);
+    }
+
+    if (target.includes(text) && text.length > 20) {
+      return 110;
+    }
+
+    const targetWords = target.split(" ").filter(Boolean);
+    const textWords = text.split(" ").filter(Boolean);
+
+    const overlap = targetWords.filter((w) => textWords.includes(w)).length;
+    const overlapRatio = targetWords.length ? overlap / targetWords.length : 0;
+
+    const firstChunk = targetWords.slice(0, Math.min(6, targetWords.length)).join(" ");
+    const lastChunk = targetWords.slice(Math.max(0, targetWords.length - 6)).join(" ");
+
+    let score = overlapRatio * 95;
+
+    if (firstChunk && text.includes(firstChunk)) score += 18;
+    if (lastChunk && text.includes(lastChunk)) score += 12;
+
+    score -= Math.min(Math.abs(text.length - target.length) * 0.06, 18);
+
+    return score;
+  };
 
   const clearHighlights = () => {
     const contents = renditionRef.current?.getContents?.() || [];
@@ -332,53 +399,86 @@ export default function Reader({ darkMode, setDarkMode }) {
     });
   };
 
-  const highlightActiveSentenceInView = (sentence) => {
-    if (!sentence || !renditionRef.current) return;
-
-    const target = normalizeForMatch(sentence);
-    if (!target) return;
+  const highlightActiveSentenceInView = (syncItem) => {
+    if (!syncItem || !renditionRef.current) return;
 
     clearHighlights();
 
+    const targets = expandCandidateTexts(syncItem);
+    if (targets.length === 0) return;
+
     const contents = renditionRef.current.getContents?.() || [];
+    const matchedElements = new Set();
 
-    for (const content of contents) {
-      try {
-        const doc = content.document;
-        const candidates = doc.querySelectorAll("p, div, li, blockquote");
+    const considerElement = (el, target) => {
+      const text = normalizeForMatch(el.textContent);
+      if (!text || text.length < 4) return null;
+      if (text.length > 1800) return null;
 
-        for (const el of candidates) {
-          const text = normalizeForMatch(el.textContent);
-          if (!text) continue;
+      const score = scoreBlockMatch(target, text);
+      return { el, text, score };
+    };
 
-          const firstWords = target.split(" ").slice(0, 6).join(" ");
-          const strongMatch =
-            text.includes(target) ||
-            target.includes(text) ||
-            (firstWords.length > 20 && text.includes(firstWords));
+    const selectorPass = (selectors, minScore) => {
+      for (const target of targets) {
+        let best = null;
 
-          if (strongMatch) {
-            el.classList.add("bookcover-sync-block-highlight");
-            el.style.background = THEME.highlight;
-            el.style.borderRadius = "6px";
-            el.style.boxShadow = `0 0 0 2px ${THEME.highlight}`;
-            el.style.transition = "all 0.2s ease";
-            return;
+        for (const content of contents) {
+          try {
+            const doc = content.document;
+            const candidates = doc.querySelectorAll(selectors);
+
+            for (const el of candidates) {
+              const result = considerElement(el, target);
+              if (!result) continue;
+
+              if (
+                result.score >= minScore &&
+                (!best || result.score > best.score)
+              ) {
+                best = result;
+              }
+            }
+          } catch (e) {
+            console.error("[Bookcover/Sync] selector pass error:", e);
           }
         }
-      } catch (e) {
-        console.error("[Bookcover/Sync] highlight error:", e);
+
+        if (best?.el) {
+          matchedElements.add(best.el);
+        }
       }
+    };
+
+    // Prefer paragraph-ish blocks first.
+    selectorPass("p, li, blockquote", 120);
+
+    // If we still missed some, try more generic blocks.
+    if (matchedElements.size === 0) {
+      selectorPass("div, p, li, blockquote", 112);
     }
+
+    // Last fallback: allow a looser match on smaller inline elements.
+    if (matchedElements.size === 0) {
+      selectorPass("span, div, p, li, blockquote", 105);
+    }
+
+    matchedElements.forEach((el) => {
+      el.classList.add("bookcover-sync-block-highlight");
+      el.style.background = THEME.highlight;
+      el.style.borderRadius = "6px";
+      el.style.boxShadow = `0 0 0 2px ${THEME.highlight}`;
+      el.style.transition = "all 0.15s ease";
+    });
   };
 
   useEffect(() => {
-    if (!activeSyncItem?.sentence) {
+    if (!activeSyncItem) {
       clearHighlights();
       return;
     }
 
-    highlightActiveSentenceInView(activeSyncItem.sentence);
+    highlightActiveSentenceInView(activeSyncItem);
   }, [activeSyncItem, darkMode]);
 
   const destroyReader = () => {
@@ -626,9 +726,9 @@ export default function Reader({ darkMode, setDarkMode }) {
             }
           }
 
-          if (activeSyncItem?.sentence) {
+          if (activeSyncItem) {
             setTimeout(() => {
-              highlightActiveSentenceInView(activeSyncItem.sentence);
+              highlightActiveSentenceInView(activeSyncItem);
             }, 100);
           }
         });
@@ -1267,6 +1367,27 @@ export default function Reader({ darkMode, setDarkMode }) {
 
         <div style={styles.sidebarCard}>
           <h2 style={styles.h2}>Audio</h2>
+
+          <div
+            style={{
+              color: COLORS.white,
+              fontSize: 14,
+              marginBottom: 6,
+              fontWeight: 600,
+            }}
+          >
+            Upload audio
+          </div>
+
+          <input
+            type="file"
+            accept="audio/*"
+            onChange={(e) => setAudioFile(e.target.files?.[0] || null)}
+            style={{
+              marginBottom: 12,
+              color: "#fff",
+            }}
+          />
 
           {audioTracks.length > 0 && (
             <select
