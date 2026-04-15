@@ -1,5 +1,5 @@
 import { useParams, useNavigate } from "react-router-dom";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, onSnapshot } from "firebase/firestore";
 import { db, storage, auth } from "../firebase";
 import { ref, getDownloadURL } from "firebase/storage";
 import { useEffect, useRef, useState, useMemo } from "react";
@@ -26,6 +26,7 @@ export default function Player({ darkMode, setDarkMode }) {
   const { bookId } = useParams();
   const navigate = useNavigate();
   const audioRef = useRef(null);
+
 
   const [user, setUser] = useState(null);
   const [remoteBook, setRemoteBook] = useState(null);
@@ -99,55 +100,72 @@ export default function Player({ darkMode, setDarkMode }) {
   // Same 3 scenarios as the Reader: AI-generated tracks, LibriVox multi-chapter tracks, and a single uploaded file
   useEffect(() => {
     if (!user || !bookId) return;
-    let cancelled = false;
 
-    (async () => {
-      try {
-        setStatus("Loading…");
-        const snap = await getDoc(doc(db, "Users", user.uid, "Books", bookId));
-        if (!snap.exists()) { setStatus("Book not found."); return; }
+    const bookRef = doc(db, "Users", user.uid, "Books", bookId);
 
-        const data = snap.data();
-        if (cancelled) return;
-        setRemoteBook(data);
+    const unsub = onSnapshot(
+      bookRef,
+      async (snap) => {
+        try {
+          setStatus("Loading...");
 
-        // Resolve audio tracks
-        let tracks = [];
-        if (data.generated_audio_tracks?.length > 0) {
-          for (const track of data.generated_audio_tracks) {
-            const url = await getDownloadURL(ref(storage, track.storage_path));
-            tracks.push({ ...track, url });
+          if (!snap.exists()) {
+            setRemoteBook(null);
+            setAudioTracks([]);
+            setAudioUrl(null);
+            setStatus("Book not found.");
+            return;
           }
-        } else if (data.librivox_audio_tracks?.length > 0) {
-          for (const track of data.librivox_audio_tracks) {
-            const url = await getDownloadURL(ref(storage, track.storage_path));
-            tracks.push({ ...track, url });
-          }
-        } else if (data.audio_storage_path) {
-          // single uploaded file is wrapped in a track object so the rest of the UI works on a track-basis
-          const url = await getDownloadURL(ref(storage, data.audio_storage_path));
-          tracks.push({ title: data.title || "Track 1", url, index: 0 });
-        } else if (data.audio_link) {
-          tracks.push({ title: data.title || "Track 1", url: data.audio_link, index: 0 });
-        }
 
-        if (!cancelled) {
+          const data = snap.data();
+          setRemoteBook(data);
+
+          let tracks = [];
+
+          if (data.generated_audio_tracks?.length > 0) {
+            for (const track of data.generated_audio_tracks) {
+              const url = await getDownloadURL(ref(storage, track.storage_path));
+              tracks.push({ ...track, url });
+            }
+          } else if (data.librivox_audio_tracks?.length > 0) {
+            for (const track of data.librivox_audio_tracks) {
+              const url = await getDownloadURL(ref(storage, track.storage_path));
+              tracks.push({ ...track, url });
+            }
+          } else if (data.audio_storage_path) {
+            const url = await getDownloadURL(ref(storage, data.audio_storage_path));
+            tracks.push({ title: data.title || "Track 1", url, index: 0 });
+          } else if (data.audio_link) {
+            tracks.push({ title: data.title || "Track 1", url: data.audio_link, index: 0 });
+          }
+
           setAudioTracks(tracks);
-          if (tracks.length > 0) {
-            setAudioUrl(tracks[0].url);
+
+          if (tracks.length === 0) {
+            setAudioUrl(null);
             setCurrentTrackIndex(0);
+            setStatus("No audio found for this book.");
+            return;
           }
+
+          const safeIndex = Math.min(currentTrackIndex, tracks.length - 1);
+          setCurrentTrackIndex(safeIndex);
+          setAudioUrl(tracks[safeIndex].url);
           setStatus("Ready");
+        } catch (e) {
+          console.error("[Player] load failed:", e);
+          setStatus("Failed to load.");
         }
-      } catch (e) {
-        console.error("[Player] load failed:", e);
+      },
+      (error) => {
+        console.error("[Player] snapshot failed:", error);
         setStatus("Failed to load.");
       }
-    })();
+    );
 
-    return () => { cancelled = true; };
+    return () => unsub();
   }, [user, bookId]);
-
+  
   // Audio events
   // to ensure sync with the actual playback position
   useEffect(() => {
