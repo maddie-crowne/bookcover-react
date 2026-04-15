@@ -449,14 +449,82 @@ const [globalCurrentTime, setGlobalCurrentTime] = useState(0);
     }
   };
 
-  // strips extra whitespace and normalises smart quotes so that text from the sync JSON 
+  // strips extra whitespace and normalises smart quotes so that text from the sync JSON
   const normalizeForMatch = (text) =>
     (text || "")
+      .replace(/\u00A0/g, " ")
       .replace(/\s+/g, " ")
       .replace(/[“”]/g, '"')
       .replace(/[‘’]/g, "'")
+      .replace(/[—–]/g, "-")
       .trim()
       .toLowerCase();
+
+  const stripOuterQuotes = (text) => {
+    if (!text) return "";
+    return text
+      .trim()
+      .replace(/^["'“‘]+/, "")
+      .replace(/["'”’]+$/, "")
+      .trim();
+  };
+
+  const expandCandidateTexts = (syncItem) => {
+    const raw = [
+      syncItem?.highlight_text,
+      ...(Array.isArray(syncItem?.highlight_parts) ? syncItem.highlight_parts : []),
+      syncItem?.sentence,
+    ].filter(Boolean);
+
+    const out = new Set();
+
+    raw.forEach((part) => {
+      const norm = normalizeForMatch(part);
+      if (!norm) return;
+      out.add(norm);
+
+      const stripped = normalizeForMatch(stripOuterQuotes(part));
+      if (stripped) out.add(stripped);
+
+      const noPunct = norm.replace(/[.,!?;:]+$/g, "").trim();
+      if (noPunct) out.add(noPunct);
+    });
+
+    return Array.from(out).filter((t) => t.length >= 6);
+  };
+
+  const scoreBlockMatch = (target, text) => {
+    if (!target || !text) return -999;
+
+    if (text === target) return 200;
+
+    if (text.includes(target)) {
+      const extra = Math.max(0, text.length - target.length);
+      return 170 - Math.min(extra * 0.08, 45);
+    }
+
+    if (target.includes(text) && text.length > 20) {
+      return 110;
+    }
+
+    const targetWords = target.split(" ").filter(Boolean);
+    const textWords = text.split(" ").filter(Boolean);
+
+    const overlap = targetWords.filter((w) => textWords.includes(w)).length;
+    const overlapRatio = targetWords.length ? overlap / targetWords.length : 0;
+
+    const firstChunk = targetWords.slice(0, Math.min(6, targetWords.length)).join(" ");
+    const lastChunk = targetWords.slice(Math.max(0, targetWords.length - 6)).join(" ");
+
+    let score = overlapRatio * 95;
+
+    if (firstChunk && text.includes(firstChunk)) score += 18;
+    if (lastChunk && text.includes(lastChunk)) score += 12;
+
+    score -= Math.min(Math.abs(text.length - target.length) * 0.06, 18);
+
+    return score;
+  };
 
   // removes any sentence highlight styles we applied to the EPUB's iframe DOM.
   // called before applying a new highlight so only one sentence is highlighted at a time.
@@ -480,69 +548,98 @@ const [globalCurrentTime, setGlobalCurrentTime] = useState(0);
       }
     });
   };
-
-  // finds the paragraph in the EPUB's iframe that best matches the given sentence string
-  // and applies a highlight style to it. uses a fuzzy "first 6 words" match as a fallback for cases where the sync JSON and EPUB text don't match character-for-character.
-  const highlightActiveSentenceInView = (sentence) => {
-    if (!sentence || !renditionRef.current) return;
-
-    const target = normalizeForMatch(sentence);
-    if (!target) return;
+  
+  const highlightActiveSentenceInView = (syncItem) => {
+    if (!syncItem || !renditionRef.current) return;
 
     clearHighlights();
 
+    const targets = expandCandidateTexts(syncItem);
+    if (targets.length === 0) return;
+
     const contents = renditionRef.current.getContents?.() || [];
+    const matchedElements = new Set();
 
-    for (const content of contents) {
-      try {
-        const doc = content.document;
-        const candidates = doc.querySelectorAll("p, div, li, blockquote");
+    const considerElement = (el, target) => {
+      const text = normalizeForMatch(el.textContent);
+      if (!text || text.length < 4) return null;
+      if (text.length > 1800) return null;
 
-        for (const el of candidates) {
-          const text = normalizeForMatch(el.textContent);
-          if (!text) continue;
+      const score = scoreBlockMatch(target, text);
+      return { el, text, score };
+    };
 
-          const firstWords = target.split(" ").slice(0, 6).join(" ");
-          const strongMatch =
-            text.includes(target) ||
-            target.includes(text) ||
-            (firstWords.length > 20 && text.includes(firstWords));
+    const selectorPass = (selectors, minScore) => {
+      for (const target of targets) {
+        let best = null;
 
-          if (strongMatch) {
-            el.classList.add("bookcover-sync-block-highlight");
-            el.style.background = THEME.highlight;
-            el.style.borderRadius = "6px";
-            el.style.boxShadow = `0 0 0 2px ${THEME.highlight}`;
-            el.style.transition = "all 0.2s ease";
-            return;
+        for (const content of contents) {
+          try {
+            const doc = content.document;
+            const candidates = doc.querySelectorAll(selectors);
+
+            for (const el of candidates) {
+              const result = considerElement(el, target);
+              if (!result) continue;
+
+              if (
+                result.score >= minScore &&
+                (!best || result.score > best.score)
+              ) {
+                best = result;
+              }
+            }
+          } catch (e) {
+            console.error("[Bookcover/Sync] selector pass error:", e);
           }
         }
-      } catch (e) {
-        console.error("[Bookcover/Sync] highlight error:", e);
+
+        if (best?.el) {
+          matchedElements.add(best.el);
+        }
       }
+    };
+
+    // Prefer paragraph-ish blocks first.
+    selectorPass("p, li, blockquote", 120);
+
+    // If we still missed some, try more generic blocks.
+    if (matchedElements.size === 0) {
+      selectorPass("div, p, li, blockquote", 112);
     }
+
+    // Last fallback: allow a looser match on smaller inline elements.
+    if (matchedElements.size === 0) {
+      selectorPass("span, div, p, li, blockquote", 105);
+    }
+
+    matchedElements.forEach((el) => {
+      el.classList.add("bookcover-sync-block-highlight");
+      el.style.background = THEME.highlight;
+      el.style.borderRadius = "6px";
+      el.style.boxShadow = `0 0 0 2px ${THEME.highlight}`;
+      el.style.transition = "all 0.15s ease";
+    });
   };
 
   // when the active sync sentence changes, either highlight it in place (if already visible) or trigger an auto-turn to bring it into view.
   // also re-runs when darkMode changes so the highlight color updates without a page turn.
   useEffect(() => {
-    const sentence = activeSyncItem?.sentence;
-  
-    if (!sentence) {
+    if (!activeSyncItem) {
       clearHighlights();
       lastAutoTurnSentenceRef.current = null;
       return;
     }
-  
-    if (lastAutoTurnSentenceRef.current === sentence) {
-      highlightActiveSentenceInView(sentence);
+
+    if (lastAutoTurnSentenceRef.current === activeSyncItem.sentence) {
+      highlightActiveSentenceInView(activeSyncItem);
       return;
     }
-    // if it's the same sentence as the last auto-turn, just re-apply the highlight
-    // (handles the case where darkMode changed and the highlight colour needs updating)
-    lastAutoTurnSentenceRef.current = sentence;
-    autoTurnToActiveSentence(sentence);
+
+    lastAutoTurnSentenceRef.current = activeSyncItem.sentence;
+    autoTurnToActiveSentence(activeSyncItem);
   }, [activeSyncItem, darkMode]);
+  
   const isSentenceVisibleInView = (sentence) => {
     if (!sentence || !renditionRef.current) return false;
   
@@ -890,10 +987,10 @@ const [globalCurrentTime, setGlobalCurrentTime] = useState(0);
             }
           }
 
-          // re-appply the sync highlight after a page turn since the DOM was replaced
+          // re-apply the sync highlight after a page turn since the DOM was replaced
           if (activeSyncItem?.sentence) {
             setTimeout(() => {
-              highlightActiveSentenceInView(activeSyncItem.sentence);
+              highlightActiveSentenceInView(activeSyncItem);
             }, 100);
           }
         });
@@ -1680,6 +1777,26 @@ const [globalCurrentTime, setGlobalCurrentTime] = useState(0);
         {/* Sidebar: audio, sync, bookmarks, chapters */}
         <div style={styles.sidebarCard}>
           <h2 style={styles.h2}>Audio</h2>
+          <div
+            style={{
+              color: COLORS.white,
+              fontSize: 14,
+              marginBottom: 6,
+              fontWeight: 600,
+            }}
+          >
+            Upload audio
+          </div>
+
+          <input
+            type="file"
+            accept="audio/*"
+            onChange={(e) => setAudioFile(e.target.files?.[0] || null)}
+            style={{
+              marginBottom: 12,
+              color: "#fff",
+            }}
+          />
 
           {/* chapter/track selector — only shown for multi-track books */}
           {/*
