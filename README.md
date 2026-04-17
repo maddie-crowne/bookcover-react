@@ -1,16 +1,39 @@
-# React + Vite
+# Bookcover
+**Bookcover** is a <b>personal library</b> web application that allows authenticated users to lookup (leveraging Gutenberg and Librivox APIs), upload, store, and read EPUBs and MP3 files;
+generate the audio for an EPUB; and sync a (manually uploaded or generated) audio with an EPUB. It is not a distribution platform, or a public-facing service.
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+## Getting Started: (Step 1/3) Run the UI
 
-Currently, two official plugins are available:
+The front-end was built using React. To launch the UI and use your library follow these instructions tailored for Virtual Studio Code:
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+1.  Open a Terminal.
+2.  Install dependencies:
+    ```
+    npm install
+    ```
+3.  Run the development server:
+    ```
+    npm run dev
+    ```
+4.  Open your browser to the local address provided ( `http://localhost:<WHICHEVER PORT NUMBER>`).
 
-## React Compiler
+---
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Getting Started: (Step 2/3) Audio Generation
+To enable the "Generate Audio" functionality within the UI, you must first have the generation backend running. 
 
-## Expanding the ESLint configuration
+### How To: Enable Audio Generation
+`TODO: `
+### How To: Link an EPUB with an Audio file 
+`TODO: `
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+
+## Getting Started: (Step 3/3) Audio Synchronization Section
+Please note that while the React UI contains a **Sync** button when you hover over any book with an associated audio file, clicking it within the browser currently **does not trigger the synchronization process**. 
+
+To sync an EPUB with an audio file, you must run the process through its **Docker container**.
+
+### How to Sync
+To synchronize your audio and text manually and be able to to enjoy synced reading on your Bookcover Reader follow these steps: 
+`TODO: `
+---
