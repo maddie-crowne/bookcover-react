@@ -32,6 +32,7 @@ export default function Reader({ darkMode, setDarkMode }) {
   const bookRef = useRef(null);
   const renditionRef = useRef(null);
   const audioRef = useRef(null);
+  const pendingSeekTimeRef = useRef(null);
 
   const allSpinePageCountsRef = useRef({});
   const isCountingRef = useRef(false);
@@ -53,6 +54,7 @@ export default function Reader({ darkMode, setDarkMode }) {
   const [audioTracks, setAudioTracks] = useState([]);
   const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
 
   const [toc, setToc] = useState([]);
   const [progress, setProgress] = useState(0);
@@ -136,6 +138,92 @@ export default function Reader({ darkMode, setDarkMode }) {
     }
 
     return `${m}:${String(s).padStart(2, "0")}`;
+  };
+
+  const currentTrack = audioTracks[currentTrackIndex] || null;
+
+  const changeTrack = (nextIndex) => {
+    if (nextIndex < 0 || nextIndex >= audioTracks.length) return;
+    const wasPlaying = !!audioRef.current && !audioRef.current.paused;
+    shouldAutoplayNextTrackRef.current = wasPlaying;
+    pendingSeekTimeRef.current = 0;
+    setCurrentTrackIndex(nextIndex);
+    setAudioUrl(audioTracks[nextIndex].url);
+    setCurrentTime(0);
+    setIsPlaying(wasPlaying);
+  };
+
+  const togglePlayPause = async () => {
+    const a = audioRef.current;
+    if (!a || !audioUrl) return;
+
+    try {
+      if (a.paused) {
+        await a.play();
+        setIsPlaying(true);
+      } else {
+        a.pause();
+        setIsPlaying(false);
+      }
+    } catch (e) {
+      console.error("[Reader] play/pause failed:", e);
+    }
+  };
+
+  const seekGlobalAudio = (nextGlobalTime) => {
+    const a = audioRef.current;
+    if (!a || !audioUrl) return;
+
+    const totalDuration = globalDuration || a.duration || 0;
+    if (!totalDuration) return;
+
+    const clamped = Math.max(0, Math.min(nextGlobalTime, totalDuration));
+
+    if (!audioTracks.length || !trackDurations.length) {
+      a.currentTime = clamped;
+      setCurrentTime(clamped);
+      setGlobalCurrentTime(clamped);
+      return;
+    }
+
+    let running = 0;
+    let targetTrackIndex = 0;
+
+    for (let i = 0; i < trackDurations.length; i++) {
+      const nextRunning = running + (trackDurations[i] || 0);
+      if (clamped <= nextRunning || i === trackDurations.length - 1) {
+        targetTrackIndex = i;
+        break;
+      }
+      running = nextRunning;
+    }
+
+    const localTime = clamped - running;
+    const wasPlaying = !!audioRef.current && !audioRef.current.paused;
+
+    if (targetTrackIndex !== currentTrackIndex) {
+      shouldAutoplayNextTrackRef.current = wasPlaying;
+      pendingSeekTimeRef.current = localTime;
+      setCurrentTrackIndex(targetTrackIndex);
+      setAudioUrl(audioTracks[targetTrackIndex].url);
+      setCurrentTime(localTime);
+      setGlobalCurrentTime(clamped);
+      setIsPlaying(wasPlaying);
+      return;
+    }
+
+    a.currentTime = localTime;
+    setCurrentTime(localTime);
+    setGlobalCurrentTime(clamped);
+  };
+
+  const handleGlobalProgressClick = (e) => {
+    const totalDuration = globalDuration || audioRef.current?.duration || 0;
+    if (!totalDuration) return;
+
+    const rect = e.currentTarget.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    seekGlobalAudio(ratio * totalDuration);
   };
 
   useEffect(() => {
@@ -289,19 +377,28 @@ export default function Reader({ darkMode, setDarkMode }) {
       if (currentTrackIndex + 1 < audioTracks.length) {
         const next = currentTrackIndex + 1;
         shouldAutoplayNextTrackRef.current = true;
+        pendingSeekTimeRef.current = 0;
         setCurrentTrackIndex(next);
         setAudioUrl(audioTracks[next].url);
+      } else {
+        setIsPlaying(false);
       }
     };
 
     const onTime = () => setCurrentTime(a.currentTime || 0);
+    const onPlay = () => setIsPlaying(true);
+    const onPause = () => setIsPlaying(false);
 
     a.addEventListener("ended", onEnded);
     a.addEventListener("timeupdate", onTime);
+    a.addEventListener("play", onPlay);
+    a.addEventListener("pause", onPause);
 
     return () => {
       a.removeEventListener("ended", onEnded);
       a.removeEventListener("timeupdate", onTime);
+      a.removeEventListener("play", onPlay);
+      a.removeEventListener("pause", onPause);
     };
   }, [audioTracks, currentTrackIndex]);
 
@@ -318,6 +415,19 @@ export default function Reader({ darkMode, setDarkMode }) {
     if (!a || !audioUrl) return;
 
     const handleLoaded = async () => {
+      if (pendingSeekTimeRef.current !== null) {
+        a.currentTime = pendingSeekTimeRef.current;
+        setCurrentTime(pendingSeekTimeRef.current);
+        pendingSeekTimeRef.current = null;
+      } else if (!shouldAutoplayNextTrackRef.current) {
+        a.currentTime = 0;
+        setCurrentTime(0);
+      }
+
+      if (!audioTracks.length) {
+        setGlobalDuration(a.duration || 0);
+      }
+
       if (!shouldAutoplayNextTrackRef.current) return;
 
       try {
@@ -336,7 +446,7 @@ export default function Reader({ darkMode, setDarkMode }) {
       a.removeEventListener("loadedmetadata", handleLoaded);
       a.removeEventListener("canplay", handleLoaded);
     };
-  }, [audioUrl]);
+  }, [audioUrl, audioTracks.length]);
 
   useEffect(() => {
     if (!syncFile) {
@@ -639,7 +749,6 @@ export default function Reader({ darkMode, setDarkMode }) {
 
     return false;
   };
-
 
   const destroyReader = () => {
     try {
@@ -1667,51 +1776,34 @@ export default function Reader({ darkMode, setDarkMode }) {
 
         <div style={styles.sidebarCard}>
           <h2 style={styles.h2}>Audio</h2>
-          <div
-            style={{
-              color: COLORS.white,
-              fontSize: 14,
-              marginBottom: 6,
-              fontWeight: 600,
-            }}
-          >
-            Upload audio
-          </div>
 
-          <input
-            type="file"
-            accept="audio/*"
-            onChange={(e) => setAudioFile(e.target.files?.[0] || null)}
-            style={{
-              marginBottom: 12,
-              color: "#fff",
-            }}
-          />
-
-          {/*
           {audioTracks.length > 0 && (
             <select
               value={currentTrackIndex}
-              onChange={(e) => {
-                const idx = Number(e.target.value);
-                setCurrentTrackIndex(idx);
-                setAudioUrl(audioTracks[idx].url);
-              }}
+              onChange={(e) => changeTrack(Number(e.target.value))}
               style={{
                 width: "100%",
                 marginBottom: 10,
-                padding: 8,
+                padding: 10,
                 borderRadius: 10,
+                border: "1px solid rgba(255,255,255,0.14)",
+                background: "rgba(255,255,255,0.08)",
+                color: COLORS.white,
+                fontFamily: FONTS.ui,
+                fontSize: 14,
               }}
             >
               {audioTracks.map((track, idx) => (
-                <option key={track.index} value={idx}>
-                  {track.title || `Chapter ${track.index}`}
+                <option
+                  key={track.index ?? idx}
+                  value={idx}
+                  style={{ color: "#122630" }}
+                >
+                  {track.title || track.label || `Audio ${idx + 1}`}
                 </option>
               ))}
             </select>
           )}
-          */}
 
           <div
             style={{
@@ -1781,7 +1873,7 @@ export default function Reader({ darkMode, setDarkMode }) {
             })}
           </div>
 
-          <audio ref={audioRef} controls src={audioUrl || undefined} style={{ width: "100%" }} />
+          <audio ref={audioRef} src={audioUrl || undefined} style={{ display: "none" }} />
 
           <div
             style={{
@@ -1793,29 +1885,144 @@ export default function Reader({ darkMode, setDarkMode }) {
               padding: 12,
             }}
           >
-            <div>
-              <b>Current time:</b> {formatClock(globalCurrentTime)} / {formatClock(globalDuration)}
-            </div>
+            {currentTrack && (
+              <div
+                style={{
+                  marginBottom: 8,
+                  fontSize: 13,
+                  color: "rgba(255,255,255,0.78)",
+                }}
+              >
+                <b>Now playing:</b> {currentTrack.title || currentTrack.label || `Audio ${currentTrackIndex + 1}`}
+              </div>
+            )}
 
             <div
               style={{
-                marginTop: 8,
-                height: 8,
-                borderRadius: 999,
-                background: "rgba(255,255,255,0.14)",
-                overflow: "hidden",
+                display: "flex",
+                alignItems: "center",
+                gap: 12,
               }}
             >
+              <button
+                onClick={togglePlayPause}
+                disabled={!audioUrl}
+                style={{
+                  width: 42,
+                  height: 42,
+                  borderRadius: "50%",
+                  border: "1px solid rgba(255,255,255,0.18)",
+                  background: "rgba(255,255,255,0.08)",
+                  color: COLORS.white,
+                  fontSize: 16,
+                  cursor: audioUrl ? "pointer" : "not-allowed",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  transition: "all 0.15s ease",
+                  flexShrink: 0,
+                }}
+                onMouseEnter={(e) => {
+                  if (!audioUrl) return;
+                  e.currentTarget.style.background = "rgba(255,255,255,0.18)";
+                  e.currentTarget.style.transform = "scale(1.05)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "rgba(255,255,255,0.08)";
+                  e.currentTarget.style.transform = "scale(1)";
+                }}
+              >
+                {isPlaying ? "❚❚" : "▶"}
+              </button>
+
+              <div style={{ flex: 1 }}>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    fontSize: 13,
+                    marginBottom: 6,
+                    opacity: 0.85,
+                  }}
+                >
+                  <span>
+                    <b>Current Time:</b> {formatClock(globalCurrentTime)}
+                  </span>
+                  <span>{formatClock(globalDuration)}</span>
+                </div>
+
+                <div
+                  onClick={handleGlobalProgressClick}
+                  style={{
+                    height: 8,
+                    borderRadius: 999,
+                    background: "rgba(255,255,255,0.15)",
+                    overflow: "hidden",
+                    cursor: (globalDuration || audioRef.current?.duration || 0) > 0 ? "pointer" : "default",
+                  }}
+                >
+                  <div
+                    style={{
+                      height: "100%",
+                      width:
+                        (globalDuration || audioRef.current?.duration || 0) > 0
+                          ? `${(globalCurrentTime / (globalDuration || audioRef.current?.duration || 1)) * 100}%`
+                          : "0%",
+                      background: "rgba(255,255,255,0.9)",
+                      borderRadius: 999,
+                      transition: "width 0.15s ease",
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {audioTracks.length > 1 && (
               <div
                 style={{
-                  height: "100%",
-                  width: globalDuration > 0 ? `${(globalCurrentTime / globalDuration) * 100}%` : "0%",
-                  background: COLORS.status,
-                  borderRadius: 999,
-                  transition: "width 0.2s ease",
+                  marginTop: 10,
+                  display: "flex",
+                  gap: 8,
                 }}
-              />
-            </div>
+              >
+                <button
+                  onClick={() => changeTrack(currentTrackIndex - 1)}
+                  disabled={currentTrackIndex === 0}
+                  style={{
+                    flex: 1,
+                    padding: "8px 10px",
+                    borderRadius: 10,
+                    border: "1px solid rgba(255,255,255,0.18)",
+                    background: currentTrackIndex === 0 ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.08)",
+                    color: COLORS.white,
+                    cursor: currentTrackIndex === 0 ? "not-allowed" : "pointer",
+                    opacity: currentTrackIndex === 0 ? 0.5 : 1,
+                  }}
+                >
+                  Previous file
+                </button>
+
+                <button
+                  onClick={() => changeTrack(currentTrackIndex + 1)}
+                  disabled={currentTrackIndex === audioTracks.length - 1}
+                  style={{
+                    flex: 1,
+                    padding: "8px 10px",
+                    borderRadius: 10,
+                    border: "1px solid rgba(255,255,255,0.18)",
+                    background:
+                      currentTrackIndex === audioTracks.length - 1
+                        ? "rgba(255,255,255,0.05)"
+                        : "rgba(255,255,255,0.08)",
+                    color: COLORS.white,
+                    cursor: currentTrackIndex === audioTracks.length - 1 ? "not-allowed" : "pointer",
+                    opacity: currentTrackIndex === audioTracks.length - 1 ? 0.5 : 1,
+                  }}
+                >
+                  Next file
+                </button>
+              </div>
+            )}
 
             <div style={{ marginTop: 8 }}>
               <b>Speed:</b> {playbackRate}×

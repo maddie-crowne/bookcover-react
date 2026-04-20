@@ -161,7 +161,7 @@ def generate_audio():
                         [sys.executable, tts_script, txt_path, mp3_path, voice],
                         capture_output=True,
                         text=True,
-                        timeout=300
+                        timeout=1000
                     )
                 except subprocess.TimeoutExpired:
                     raise Exception(f"TTS timed out for chapter {chapter['index']}")
