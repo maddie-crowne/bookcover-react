@@ -40,7 +40,55 @@ Please note that while the React UI contains a **Sync** button when you hover ov
 
 To sync an EPUB with an audio file, you must run the process through its **Docker container**.
 
-### How to: Sync
-To synchronize your audio and text manually and be able to to enjoy synced reading on your Bookcover Reader follow these steps: 
-`TODO: `
----
+### How To: Sync
+
+To synchronize your audio and text manually and generate the alignment JSON used by the Bookcover Reader, follow these steps:
+
+1. Make sure Docker is running on your machine.
+
+2. From the project root, start the synchronization services:
+
+   ```bash
+   docker compose up --build
+   ```
+
+3. In a separate terminal, start the React frontend:
+
+   ```bash
+   npm install
+   npm run dev
+   ```
+
+4. Open the Bookcover app in your browser using the localhost address shown in the terminal.
+
+5. Upload an **EPUB** file and a matching **audio** file.
+
+6. Ensure both are linked to the same book entry in Bookcover.
+
+7. Run the synchronization pipeline through the Docker/backend setup, not through the UI Sync button.
+
+8. After processing completes, locate the generated alignment output file, typically:
+
+   ```bash
+   sentences.json
+   ```
+
+9. This file contains sentence-level timestamps used for synchronized highlighting in the reader.
+
+### Example Output
+
+```json
+[
+  {
+    "sentence": "It is a truth universally acknowledged...",
+    "start": 12.41,
+    "end": 15.96
+  }
+]
+```
+
+### Notes
+
+- Best results happen when EPUB text and audio closely match.
+- LibriVox audio may include intros that cause early misalignment.
+- Multi-chapter audio files can reduce accuracy.
