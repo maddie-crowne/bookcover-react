@@ -36,6 +36,7 @@ To enable the "Generate Audio" functionality within the UI, you must first have 
     ```
     source venv/bin/activate
     ```
+    ```
     python3 app.py
     ```
 4.  You should see the backend start running in the terminal.
