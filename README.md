@@ -30,7 +30,19 @@ The front-end was built using React. To launch the UI and use your library follo
 To enable the "Generate Audio" functionality within the UI, you must first have the generation backend running. 
 
 ### How To: Enable Audio Generation
-`TODO: `
+1.  Open a Terminal.
+2.  Navigate to backend/tts-worker
+3.  From there, run:
+    ```
+    source venv/bin/activate
+    ```
+    python3 app.py
+    ```
+4.  You should see the backend start running in the terminal.
+5.  To generate an audiobook, hover over a Book Tile and click Audio. Choose a narrator voice, and
+    click generate.
+6.  You'll see your audiobook begin to generate - this can take up to 30 minutes. Once done, you can
+    listen to it in Reader and/or Player.
 ### How To: Link an EPUB with an Audio file 
 `TODO: `
 
